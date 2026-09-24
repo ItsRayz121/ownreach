@@ -59,7 +59,25 @@ export function TelegramLoginButton({ link }: TelegramLoginButtonProps) {
     script.setAttribute("data-request-access", "");
     containerRef.current.appendChild(script);
 
+    // Telegram always renders its iframe at a fixed pixel width (no "100%"
+    // option), so it never matches the full-width buttons next to it. Stretch
+    // it to fill the container once the iframe actually shows up in the DOM.
+    const container = containerRef.current;
+    const observer = new MutationObserver(() => {
+      const iframe = container.querySelector("iframe");
+      if (!iframe) return;
+      const naturalWidth = iframe.offsetWidth;
+      const targetWidth = container.offsetWidth;
+      if (naturalWidth > 0 && targetWidth > 0) {
+        iframe.style.transformOrigin = "top left";
+        iframe.style.transform = `scaleX(${targetWidth / naturalWidth})`;
+      }
+      observer.disconnect();
+    });
+    observer.observe(container, { childList: true });
+
     return () => {
+      observer.disconnect();
       window.onOwnReachTelegramAuth = undefined;
     };
   }, [botUsername, link, router]);
@@ -74,9 +92,9 @@ export function TelegramLoginButton({ link }: TelegramLoginButtonProps) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div ref={containerRef} className="flex justify-center" />
-      {error && <p className="text-destructive text-sm">{error}</p>}
+    <div className="flex flex-col gap-2">
+      <div ref={containerRef} className="flex w-full" />
+      {error && <p className="text-destructive text-center text-sm">{error}</p>}
     </div>
   );
 }
