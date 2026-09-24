@@ -34,7 +34,7 @@ export default async function BookmarksPage({
       ) : (
         <>
           {items.map((post) => (
-            <PostCard key={post.id} post={post} isAuthenticated viewerId={session.userId} />
+            <PostCard key={post.id} post={post} isAuthenticated viewerId={session.userId} viewerRole={session.role} />
           ))}
           {nextCursor && (
             <div className="p-4 text-center">

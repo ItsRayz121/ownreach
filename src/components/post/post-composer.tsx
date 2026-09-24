@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Bold, Italic, Link2, ImagePlus, X, Loader2 } from "lucide-react";
+import { Bold, Italic, Underline, Strikethrough, Code, Link2, ImagePlus, X, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/user-avatar";
 import { createPost } from "@/lib/actions/posts";
 import { uploadImage } from "@/lib/upload-client";
+import { useSelectionFormatting } from "@/lib/hooks/use-selection-formatting";
+import { useMagicPencilPaste } from "@/lib/hooks/use-magic-pencil-paste";
+import { SelectionToolbar } from "@/components/post/selection-toolbar";
 import { toast } from "sonner";
 
 const MAX_LENGTH = 2000;
@@ -35,18 +38,8 @@ export function PostComposer({ displayName, avatarUrl, onPosted, autoFocus }: Po
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function wrapSelection(before: string, after: string = before) {
-    const el = textareaRef.current;
-    if (!el) return;
-    const { selectionStart, selectionEnd, value } = el;
-    const selected = value.slice(selectionStart, selectionEnd) || "text";
-    const next = value.slice(0, selectionStart) + before + selected + after + value.slice(selectionEnd);
-    setBody(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(selectionStart + before.length, selectionStart + before.length + selected.length);
-    });
-  }
+  const { anchor, close: closeToolbar, wrapSelection, clearFormatting } = useSelectionFormatting(textareaRef, setBody);
+  const magicPencil = useMagicPencilPaste(textareaRef, setBody);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -101,11 +94,16 @@ export function PostComposer({ displayName, avatarUrl, onPosted, autoFocus }: Po
         <Textarea
           ref={textareaRef}
           value={body}
-          onChange={(e) => setBody(e.target.value.slice(0, MAX_LENGTH))}
+          onChange={(e) => {
+            magicPencil.notifyEdited();
+            setBody(e.target.value.slice(0, MAX_LENGTH));
+          }}
+          onPaste={magicPencil.handlePaste}
           placeholder="What's happening in your community?"
           rows={3}
           className="min-h-20 resize-none border-none px-0 text-[16px] shadow-none focus-visible:ring-0"
         />
+        <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
 
         {media && (
           <div className="relative mt-2 w-fit overflow-hidden rounded-xl border">
@@ -133,6 +131,27 @@ export function PostComposer({ displayName, avatarUrl, onPosted, autoFocus }: Po
               type="button"
               variant="ghost"
               size="icon"
+              onClick={() => wrapSelection("__")}
+              aria-label="Underline"
+            >
+              <Underline className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => wrapSelection("~~")}
+              aria-label="Strikethrough"
+            >
+              <Strikethrough className="size-4" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" onClick={() => wrapSelection("`")} aria-label="Code">
+              <Code className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => wrapSelection("[", "](https://)")}
               aria-label="Link"
             >
@@ -149,6 +168,18 @@ export function PostComposer({ displayName, avatarUrl, onPosted, autoFocus }: Po
               {isUploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
             </Button>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+            {magicPencil.active && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={magicPencil.apply}
+                aria-label="Magic pencil — restore original formatting"
+                title="Magic pencil — restore original formatting"
+              >
+                <Sparkles className="size-4" />
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-3">

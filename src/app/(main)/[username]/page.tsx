@@ -8,6 +8,7 @@ import { isFollowing } from "@/lib/data/follows";
 import { getPostsByAuthor } from "@/lib/data/posts";
 import { UserAvatar } from "@/components/user-avatar";
 import { FollowButton } from "@/components/profile/follow-button";
+import { MessageButton } from "@/components/profile/message-button";
 import { PostCard } from "@/components/post/post-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,10 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
               </Button>
             </div>
           ) : session ? (
-            <FollowButton targetUserId={profile.userId} targetUsername={profile.username} initiallyFollowing={following} />
+            <div className="flex items-center gap-2">
+              <MessageButton targetUserId={profile.userId} />
+              <FollowButton targetUserId={profile.userId} targetUsername={profile.username} initiallyFollowing={following} />
+            </div>
           ) : (
             <Button render={<Link href="/login" />} nativeButton={false}>Follow</Button>
           )}
@@ -118,7 +122,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
           />
         ) : (
           posts.map((post) => (
-            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} />
+            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} viewerRole={session?.role} />
           ))
         )}
       </div>

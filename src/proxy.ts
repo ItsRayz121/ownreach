@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/constants";
 
-const PROTECTED_PREFIXES = ["/home", "/settings", "/bookmarks"];
+const PROTECTED_PREFIXES = ["/home", "/settings", "/bookmarks", "/notifications", "/messages", "/admin"];
 const AUTH_ONLY_ROUTES = ["/login"];
 
 // Optimistic only: presence of the session cookie, no DB round trip. Real

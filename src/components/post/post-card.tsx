@@ -13,11 +13,13 @@ interface PostCardProps {
   isAuthenticated: boolean;
   /** Renders as a static block instead of a link-to-detail wrapper — used on the post detail page itself. */
   isDetail?: boolean;
-  /** Signed-in viewer's user id — shows the delete menu when it matches the post's author. */
+  /** Signed-in viewer's user id — shows the post-actions menu (Delete for the author/admins, Report otherwise). */
   viewerId?: string;
+  viewerRole?: "user" | "creator" | "admin";
 }
 
-export function PostCard({ post, isAuthenticated, isDetail, viewerId }: PostCardProps) {
+export function PostCard({ post, isAuthenticated, isDetail, viewerId, viewerRole }: PostCardProps) {
+  const canDelete = viewerId === post.author.userId || viewerRole === "admin";
   const body = (
     <div className="flex gap-3 px-4 py-3.5">
       <Link href={`/${post.author.username}`} className="shrink-0">
@@ -36,8 +38,8 @@ export function PostCard({ post, isAuthenticated, isDetail, viewerId }: PostCard
           <Link href={`/post/${post.id}`} className="text-muted-foreground shrink-0 hover:underline">
             {formatRelativeTime(post.createdAt)}
           </Link>
-          {viewerId === post.author.userId && (
-            <PostActionsMenu postId={post.id} redirectTo={isDetail ? "/home" : undefined} />
+          {viewerId && (
+            <PostActionsMenu postId={post.id} canDelete={canDelete} redirectTo={isDetail ? "/home" : undefined} />
           )}
         </div>
 

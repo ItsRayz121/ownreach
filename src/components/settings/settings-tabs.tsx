@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/settings/profile", label: "Profile" },
   { href: "/settings/connected-accounts", label: "Connected Accounts" },
+  { href: "/settings/analytics", label: "Analytics" },
 ];
 
 export function SettingsTabs() {

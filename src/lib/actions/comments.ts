@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { comments } from "@/db/schema";
+import { comments, posts, notifications, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
+import { checkRateLimit } from "@/lib/ratelimit";
+import { publishToChannel } from "@/lib/realtime/ably-server";
 
 const createCommentSchema = z.object({
   postId: z.string().uuid(),
@@ -13,20 +15,77 @@ const createCommentSchema = z.object({
   parentCommentId: z.string().uuid().optional(),
 });
 
+function extractMentions(body: string) {
+  const matches = body.match(/@[a-zA-Z0-9_]{2,30}/g) ?? [];
+  return [...new Set(matches.map((m) => m.slice(1)))];
+}
+
 export async function createComment(input: z.infer<typeof createCommentSchema>) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in to comment.");
+  await checkRateLimit("comment:create", session.userId, { limit: 30, window: "10 m" });
 
   const parsed = createCommentSchema.parse(input);
 
-  await db.insert(comments).values({
-    postId: parsed.postId,
-    authorId: session.userId,
-    body: parsed.body,
-    parentCommentId: parsed.parentCommentId,
+  const { commentId, notified } = await db.transaction(async (tx) => {
+    const [comment] = await tx
+      .insert(comments)
+      .values({
+        postId: parsed.postId,
+        authorId: session.userId,
+        body: parsed.body,
+        parentCommentId: parsed.parentCommentId,
+      })
+      .returning({ id: comments.id });
+
+    const [post] = await tx.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, parsed.postId)).limit(1);
+
+    const recipientIds = new Set<string>();
+    const notified: { recipientId: string; type: "comment" | "mention" }[] = [];
+    if (post && post.authorId !== session.userId) {
+      recipientIds.add(post.authorId);
+      notified.push({ recipientId: post.authorId, type: "comment" });
+      await tx.insert(notifications).values({
+        recipientId: post.authorId,
+        actorId: session.userId,
+        type: "comment",
+        postId: parsed.postId,
+        commentId: comment.id,
+      });
+    }
+
+    const mentionedUsernames = extractMentions(parsed.body);
+    if (mentionedUsernames.length > 0) {
+      const mentioned = await tx
+        .select({ userId: profiles.userId })
+        .from(profiles)
+        .where(inArray(profiles.username, mentionedUsernames));
+      const mentionRecipients = mentioned
+        .map((m) => m.userId)
+        .filter((id) => id !== session.userId && !recipientIds.has(id));
+      if (mentionRecipients.length > 0) {
+        for (const recipientId of mentionRecipients) notified.push({ recipientId, type: "mention" });
+        await tx.insert(notifications).values(
+          mentionRecipients.map((recipientId) => ({
+            recipientId,
+            actorId: session.userId,
+            type: "mention" as const,
+            postId: parsed.postId,
+            commentId: comment.id,
+          }))
+        );
+      }
+    }
+
+    return { commentId: comment.id, notified };
   });
 
+  await Promise.all(
+    notified.map((n) => publishToChannel(`user:${n.recipientId}:notifications`, "new", { type: n.type }))
+  );
+
   revalidatePath(`/post/${parsed.postId}`);
+  return { id: commentId };
 }
 
 export async function deleteComment(commentId: string, postId: string) {

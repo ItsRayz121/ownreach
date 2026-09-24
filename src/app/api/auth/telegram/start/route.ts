@@ -6,15 +6,19 @@ import { lt } from "drizzle-orm";
 import { db } from "@/db";
 import { telegramLoginRequests } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
-import { assertSameOrigin } from "@/lib/auth/http";
+import { assertSameOrigin, getClientIp } from "@/lib/auth/http";
 import { TELEGRAM_LOGIN_COOKIE } from "@/lib/auth/constants";
 import { buildTelegramLoginDeepLink, TELEGRAM_LOGIN_TTL_MS } from "@/lib/telegram/bot";
+import { checkRateLimitResponse } from "@/lib/ratelimit";
 
 const bodySchema = z.object({ link: z.boolean().optional() });
 
 export async function POST(req: NextRequest) {
   const originError = assertSameOrigin(req);
   if (originError) return originError;
+
+  const rateLimited = await checkRateLimitResponse("auth:telegram:start", getClientIp(req), { limit: 10, window: "10 m" });
+  if (rateLimited) return rateLimited;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

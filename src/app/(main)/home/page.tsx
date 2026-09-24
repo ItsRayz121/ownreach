@@ -55,7 +55,7 @@ export default async function HomePage({
       ) : (
         <>
           {items.map((post) => (
-            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} />
+            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} viewerRole={session?.role} />
           ))}
           {nextCursor && (
             <div className="p-4 text-center">

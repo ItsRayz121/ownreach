@@ -4,8 +4,13 @@ import { cookies } from "next/headers";
 import { buildGoogleAuthUrl } from "@/lib/auth/google";
 import { verifySession } from "@/lib/auth/session";
 import { GOOGLE_STATE_COOKIE, type OAuthStateCookie } from "@/lib/auth/oauth-state";
+import { getClientIp } from "@/lib/auth/http";
+import { checkRateLimitResponse } from "@/lib/ratelimit";
 
 export async function GET(req: NextRequest) {
+  const rateLimited = await checkRateLimitResponse("auth:google:start", getClientIp(req), { limit: 20, window: "10 m" });
+  if (rateLimited) return rateLimited;
+
   const wantsLink = req.nextUrl.searchParams.get("link") === "1";
   const session = wantsLink ? await verifySession() : null;
   const mode: OAuthStateCookie["mode"] = wantsLink && session ? "link" : "signin";

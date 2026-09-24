@@ -66,7 +66,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
             Posts
           </h2>
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} />
+            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} viewerRole={session?.role} />
           ))}
         </div>
       )}

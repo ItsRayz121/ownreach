@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { posts, postMedia, postReactions, bookmarks, hashtags, postHashtags } from "@/db/schema";
+import { posts, postMedia, postReactions, bookmarks, hashtags, postHashtags, notifications, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
+import { checkRateLimit } from "@/lib/ratelimit";
+import { publishToChannel } from "@/lib/realtime/ably-server";
 
 const createPostSchema = z.object({
   body: z.string().trim().min(1, "Say something first.").max(2000, "Posts are capped at 2000 characters."),
@@ -23,14 +25,20 @@ function extractHashtags(body: string) {
   return [...new Set(matches.map((tag) => tag.slice(1).toLowerCase()))];
 }
 
+function extractMentions(body: string) {
+  const matches = body.match(/@[a-zA-Z0-9_]{2,30}/g) ?? [];
+  return [...new Set(matches.map((m) => m.slice(1)))];
+}
+
 export async function createPost(input: z.infer<typeof createPostSchema>) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in to post.");
+  await checkRateLimit("post:create", session.userId, { limit: 10, window: "10 m" });
 
   const parsed = createPostSchema.parse(input);
   const tags = extractHashtags(parsed.body);
 
-  const postId = await db.transaction(async (tx) => {
+  const { postId, mentionRecipientIds } = await db.transaction(async (tx) => {
     const [post] = await tx
       .insert(posts)
       .values({ authorId: session.userId, body: parsed.body })
@@ -54,8 +62,32 @@ export async function createPost(input: z.infer<typeof createPostSchema>) {
       await tx.insert(postHashtags).values({ postId: post.id, hashtagId: hashtag.id }).onConflictDoNothing();
     }
 
-    return post.id;
+    const mentionedUsernames = extractMentions(parsed.body);
+    let mentionRecipientIds: string[] = [];
+    if (mentionedUsernames.length > 0) {
+      const mentioned = await tx
+        .select({ userId: profiles.userId })
+        .from(profiles)
+        .where(inArray(profiles.username, mentionedUsernames));
+      mentionRecipientIds = mentioned.map((m) => m.userId).filter((id) => id !== session.userId);
+      if (mentionRecipientIds.length > 0) {
+        await tx.insert(notifications).values(
+          mentionRecipientIds.map((recipientId) => ({
+            recipientId,
+            actorId: session.userId,
+            type: "mention" as const,
+            postId: post.id,
+          }))
+        );
+      }
+    }
+
+    return { postId: post.id, mentionRecipientIds };
   });
+
+  await Promise.all(
+    mentionRecipientIds.map((recipientId) => publishToChannel(`user:${recipientId}:notifications`, "new", { type: "mention" }))
+  );
 
   revalidatePath("/home");
   return { id: postId };
@@ -78,6 +110,7 @@ export async function deletePost(postId: string) {
 export async function toggleLike(postId: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in to react.");
+  await checkRateLimit("post:like", session.userId, { limit: 60, window: "10 m" });
 
   const [existing] = await db
     .select()
@@ -93,12 +126,25 @@ export async function toggleLike(postId: string) {
   }
 
   await db.insert(postReactions).values({ postId, userId: session.userId }).onConflictDoNothing();
+
+  const [post] = await db.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, postId)).limit(1);
+  if (post && post.authorId !== session.userId) {
+    await db.insert(notifications).values({
+      recipientId: post.authorId,
+      actorId: session.userId,
+      type: "like",
+      postId,
+    });
+    await publishToChannel(`user:${post.authorId}:notifications`, "new", { type: "like" });
+  }
+
   return { liked: true };
 }
 
 export async function toggleBookmark(postId: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in to bookmark.");
+  await checkRateLimit("post:bookmark", session.userId, { limit: 60, window: "10 m" });
 
   const [existing] = await db
     .select()

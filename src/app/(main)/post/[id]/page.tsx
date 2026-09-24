@@ -21,7 +21,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <PostCard post={post} isAuthenticated={Boolean(session)} isDetail viewerId={session?.userId} />
+      <PostCard post={post} isAuthenticated={Boolean(session)} isDetail viewerId={session?.userId} viewerRole={session?.role} />
       {session && (
         <CommentComposer postId={post.id} displayName={session.displayName ?? "You"} avatarUrl={session.avatarUrl} />
       )}

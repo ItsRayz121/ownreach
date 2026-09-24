@@ -2,10 +2,12 @@
 
 **Own your reach. Keep your community.**
 
-A creator-first social network — profiles, follows, a feed, and channels/DMs
+A creator-first social network — profiles, follows, a feed, DMs, and channels
 later — built so creators aren't entirely dependent on a platform they don't
-own. This repo is **Phase 1: Foundation + core social loop**. See
-[What's built / what's next](#whats-built--whats-next) below for scope.
+own. This repo spans **Phase 1 (foundation + core social loop)** and
+**Phase 2 (formatting UX, DMs, notifications, realtime, analytics,
+moderation)**. See [What's built / what's next](#whats-built--whats-next)
+below for scope. Images only for now — no video.
 
 ## Stack
 
@@ -57,6 +59,8 @@ See `.env.example` for the full list with comments. Summary:
 | `TELEGRAM_BOT_TOKEN` / `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Telegram login | [@BotFather](https://t.me/BotFather), then `/setdomain` to your app's domain |
 | `NEXT_PUBLIC_APP_URL` | OAuth redirects, SIWE domain check | Your app's public URL, no trailing slash |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Avatar/cover/post image uploads | [Cloudinary console](https://console.cloudinary.com), free tier |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Rate limiting writes and login attempts | [Upstash console](https://console.upstash.com), free tier — without these, requests simply aren't throttled |
+| `ABLY_API_KEY` | Live delivery for DMs and notifications | [Ably dashboard](https://ably.com/accounts), free tier — without this, messages/notifications still work via refetch, just not instantly |
 
 Wallet sign-in (SIWE) needs no server credentials — it only needs a browser
 wallet extension (MetaMask, etc.) on the visitor's side.
@@ -67,20 +71,31 @@ provisions a paid service.
 
 ## What's built / what's next
 
-**This phase:** Google / Telegram / Wallet auth with account linking,
-profiles (with avatar/cover upload), follow/unfollow, a home feed (For
-You / Following) with cursor pagination, text+image posts with a
-bold/italic/link toolbar, likes, comments, bookmarks, hashtag/mention
-linking, search (users + posts), settings (profile + connected accounts),
-PWA manifest, dark/light themes, empty/error/loading/404 states, SEO
-(robots.txt, sitemap.xml, OpenGraph).
+**Phase 1 — foundation + core social loop:** Google / Telegram / Wallet auth
+with account linking, profiles (with avatar/cover upload), follow/unfollow, a
+home feed (For You / Following) with cursor pagination, text+image posts,
+likes, comments, bookmarks, hashtag/mention linking, search (users + posts),
+settings (profile + connected accounts), PWA manifest, dark/light themes,
+empty/error/loading/404 states, SEO (robots.txt, sitemap.xml, OpenGraph).
 
-**Deliberately not built yet** (see the product spec for the full roadmap):
-channels, groups, DMs, notifications, push notifications, creator
-analytics/audience export, admin dashboard, moderation tooling, rate
-limiting (Upstash Redis), realtime (Ably), video. The "Messages" nav item
-is present but routes to a stub — it's there so the navigation shape won't
-need to change later.
+**Phase 2 — formatting UX + the deferred roadmap:**
+- Rich text: bold/italic/underline/strikethrough/code/links, a
+  Telegram/Medium-style floating selection toolbar, and a "magic pencil"
+  that offers to restore formatting lost from a paste (Unicode "fancy text"
+  or HTML clipboard content from another platform).
+- Rate limiting on writes and login attempts (Upstash Redis).
+- In-app notifications (follow/like/comment/mention) with a live unread badge.
+- 1:1 direct messages, with realtime delivery.
+- Realtime (Ably) for DMs and notifications — optional; both work via normal
+  refetch without it, just not instantly.
+- Creator analytics (follower growth, top posts, engagement totals) and a
+  followers CSV export, under Settings → Analytics.
+- Admin dashboard (`/admin`, gated on the `admin` role) with a
+  user-reporting flow, an open-reports queue, and user suspend/reinstate.
+
+**Deliberately not built yet:** channels, groups, video. Multi-participant
+conversations aren't modeled yet (DMs are 1:1 only) — the schema anticipates
+groups later but doesn't implement them.
 
 ## Database
 
@@ -103,7 +118,9 @@ before this has real production data you can't blow away.
 - Session tokens are stored as SHA-256 hashes in the database; the raw
   token only ever lives in an `httpOnly`, `Secure` (in production),
   `SameSite=Lax` cookie.
-- `proxy.ts` does an optimistic (cookie-presence-only) redirect for
-  `/home` and `/settings/*`; every actual data read/write re-verifies the
-  session server-side (`verifySession()`) — the proxy check is a UX
-  shortcut, not the security boundary.
+- `proxy.ts` does an optimistic (cookie-presence-only) redirect for its
+  protected route prefixes (`/home`, `/settings`, `/bookmarks`,
+  `/notifications`, `/messages`, `/admin`); every actual data read/write
+  re-verifies the session server-side (`verifySession()`) — the proxy check
+  is a UX shortcut, not the security boundary. `/admin` additionally checks
+  `role === "admin"` in its layout, since the proxy never looks at role.

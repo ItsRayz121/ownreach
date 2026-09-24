@@ -2,18 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { buildNavItems } from "./nav-items";
 import { logout } from "@/lib/actions/auth";
+import { NotificationBell } from "./notification-bell";
 
 interface DesktopSidebarProps {
+  userId?: string;
   username?: string;
   displayName?: string;
+  unreadNotifications?: number;
 }
 
-export function DesktopSidebar({ username, displayName }: DesktopSidebarProps) {
+export function DesktopSidebar({ userId, username, displayName, unreadNotifications = 0 }: DesktopSidebarProps) {
   const pathname = usePathname();
   const items = buildNavItems(username);
 
@@ -45,6 +48,27 @@ export function DesktopSidebar({ username, displayName }: DesktopSidebarProps) {
               </li>
             );
           })}
+          {username && userId && (
+            <li>
+              <NotificationBell userId={userId} initialUnread={unreadNotifications > 0}>
+                {(unread) => (
+                  <Link
+                    href="/notifications"
+                    className={cn(
+                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors",
+                      pathname === "/notifications" ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-accent/60"
+                    )}
+                  >
+                    <span className="relative">
+                      <Bell className="size-5" strokeWidth={pathname === "/notifications" ? 2.4 : 2} />
+                      {unread && <span className="bg-primary absolute -top-1 -right-1 size-2 rounded-full" />}
+                    </span>
+                    Notifications
+                  </Link>
+                )}
+              </NotificationBell>
+            </li>
+          )}
         </ul>
       </div>
 

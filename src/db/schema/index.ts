@@ -4,3 +4,6 @@ export * from "./profiles";
 export * from "./follows";
 export * from "./posts";
 export * from "./comments";
+export * from "./notifications";
+export * from "./messages";
+export * from "./reports";

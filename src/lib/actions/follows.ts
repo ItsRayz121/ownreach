@@ -3,14 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { follows } from "@/db/schema";
+import { follows, notifications } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { isFollowing } from "@/lib/data/follows";
+import { checkRateLimit } from "@/lib/ratelimit";
+import { publishToChannel } from "@/lib/realtime/ably-server";
 
 export async function toggleFollow(targetUserId: string, targetUsername: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in to follow creators.");
   if (session.userId === targetUserId) throw new Error("You can't follow yourself.");
+  await checkRateLimit("follow:toggle", session.userId, { limit: 30, window: "10 m" });
 
   const alreadyFollowing = await isFollowing(session.userId, targetUserId);
 
@@ -25,6 +28,13 @@ export async function toggleFollow(targetUserId: string, targetUsername: string)
       .insert(follows)
       .values({ followerId: session.userId, followingId: targetUserId })
       .onConflictDoNothing();
+
+    await db.insert(notifications).values({
+      recipientId: targetUserId,
+      actorId: session.userId,
+      type: "follow",
+    });
+    await publishToChannel(`user:${targetUserId}:notifications`, "new", { type: "follow" });
   }
 
   revalidatePath(`/${targetUsername}`);
