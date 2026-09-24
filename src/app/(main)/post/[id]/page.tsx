@@ -1,0 +1,27 @@
+import { notFound } from "next/navigation";
+import { verifySession } from "@/lib/auth/session";
+import { getPostById } from "@/lib/data/posts";
+import { getCommentsForPost } from "@/lib/data/comments";
+import { PostCard } from "@/components/post/post-card";
+import { CommentComposer } from "@/components/post/comment-composer";
+import { CommentList } from "@/components/post/comment-list";
+
+export default async function PostDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await verifySession();
+
+  const post = await getPostById(id, session?.userId);
+  if (!post) notFound();
+
+  const comments = await getCommentsForPost(id);
+
+  return (
+    <div>
+      <PostCard post={post} isAuthenticated={Boolean(session)} isDetail />
+      {session && (
+        <CommentComposer postId={post.id} displayName={session.displayName ?? "You"} avatarUrl={session.avatarUrl} />
+      )}
+      <CommentList comments={comments} />
+    </div>
+  );
+}
