@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { conversations, conversationParticipants, messages } from "@/db/schema";
@@ -19,6 +19,17 @@ export async function startConversation(targetUserId: string) {
   if (existing) return { id: existing };
 
   const id = await db.transaction(async (tx) => {
+    // There's no uniqueness constraint on a participant pair (see the note
+    // in db/schema/messages.ts), so two concurrent calls for the same pair
+    // could each pass the "no existing conversation" check above and create
+    // duplicate conversations. Serialize with a transaction-scoped advisory
+    // lock keyed by the sorted pair, then re-check before inserting.
+    const [a, b] = [session.userId, targetUserId].sort();
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${a} || ':' || ${b}, 0))`);
+
+    const raced = await findConversationBetween(session.userId, targetUserId);
+    if (raced) return raced;
+
     const [conversation] = await tx.insert(conversations).values({}).returning({ id: conversations.id });
     await tx.insert(conversationParticipants).values([
       { conversationId: conversation.id, userId: session.userId },

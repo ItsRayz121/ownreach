@@ -7,15 +7,22 @@ interface AppShellProps {
   username?: string;
   displayName?: string;
   unreadNotifications?: number;
+  isAdmin?: boolean;
   children: React.ReactNode;
 }
 
-export function AppShell({ userId, username, displayName, unreadNotifications = 0, children }: AppShellProps) {
+export function AppShell({ userId, username, displayName, unreadNotifications = 0, isAdmin = false, children }: AppShellProps) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl md:px-6">
-      <DesktopSidebar userId={userId} username={username} displayName={displayName} unreadNotifications={unreadNotifications} />
+      <DesktopSidebar
+        userId={userId}
+        username={username}
+        displayName={displayName}
+        unreadNotifications={unreadNotifications}
+        isAdmin={isAdmin}
+      />
       <div className="flex min-h-dvh w-full flex-1 flex-col md:border-x">
-        <MobileTopBar userId={userId} username={username} unreadNotifications={unreadNotifications} />
+        <MobileTopBar userId={userId} username={username} unreadNotifications={unreadNotifications} isAdmin={isAdmin} />
         <main className="flex-1 pb-20 md:pb-0">{children}</main>
       </div>
       <MobileBottomNav username={username} />

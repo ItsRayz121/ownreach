@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Bell } from "lucide-react";
+import { LogOut, Bell, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { buildNavItems } from "./nav-items";
@@ -14,9 +14,10 @@ interface DesktopSidebarProps {
   username?: string;
   displayName?: string;
   unreadNotifications?: number;
+  isAdmin?: boolean;
 }
 
-export function DesktopSidebar({ userId, username, displayName, unreadNotifications = 0 }: DesktopSidebarProps) {
+export function DesktopSidebar({ userId, username, displayName, unreadNotifications = 0, isAdmin = false }: DesktopSidebarProps) {
   const pathname = usePathname();
   const items = buildNavItems(username);
 
@@ -67,6 +68,20 @@ export function DesktopSidebar({ userId, username, displayName, unreadNotificati
                   </Link>
                 )}
               </NotificationBell>
+            </li>
+          )}
+          {isAdmin && (
+            <li>
+              <Link
+                href="/admin"
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors",
+                  pathname.startsWith("/admin") ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-accent/60"
+                )}
+              >
+                <ShieldCheck className="size-5" strokeWidth={pathname.startsWith("/admin") ? 2.4 : 2} />
+                Admin
+              </Link>
             </li>
           )}
         </ul>

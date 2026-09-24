@@ -12,6 +12,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
       username={session?.username ?? undefined}
       displayName={session?.displayName ?? undefined}
       unreadNotifications={unreadNotifications}
+      isAdmin={session?.role === "admin"}
     >
       {children}
     </AppShell>

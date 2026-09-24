@@ -125,17 +125,26 @@ export async function toggleLike(postId: string) {
     return { liked: false };
   }
 
-  await db.insert(postReactions).values({ postId, userId: session.userId }).onConflictDoNothing();
+  // Only the request whose insert actually lands (the `returning` row is
+  // non-empty) notifies — otherwise a race would double-notify the author
+  // for one logical like.
+  const inserted = await db
+    .insert(postReactions)
+    .values({ postId, userId: session.userId })
+    .onConflictDoNothing()
+    .returning({ postId: postReactions.postId });
 
-  const [post] = await db.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, postId)).limit(1);
-  if (post && post.authorId !== session.userId) {
-    await db.insert(notifications).values({
-      recipientId: post.authorId,
-      actorId: session.userId,
-      type: "like",
-      postId,
-    });
-    await publishToChannel(`user:${post.authorId}:notifications`, "new", { type: "like" });
+  if (inserted.length > 0) {
+    const [post] = await db.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, postId)).limit(1);
+    if (post && post.authorId !== session.userId) {
+      await db.insert(notifications).values({
+        recipientId: post.authorId,
+        actorId: session.userId,
+        type: "like",
+        postId,
+      });
+      await publishToChannel(`user:${post.authorId}:notifications`, "new", { type: "like" });
+    }
   }
 
   return { liked: true };

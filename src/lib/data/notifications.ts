@@ -24,7 +24,10 @@ function decodeCursor(cursor?: string): CursorParts | null {
   if (!cursor) return null;
   try {
     const [ts, id] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
-    return { createdAt: new Date(ts), id };
+    if (!ts || !id) return null;
+    const createdAt = new Date(ts);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id };
   } catch {
     return null;
   }

@@ -23,18 +23,23 @@ export async function toggleFollow(targetUserId: string, targetUsername: string)
       .where(and(eq(follows.followerId, session.userId), eq(follows.followingId, targetUserId)));
   } else {
     // Relies on the (follower_id, following_id) primary key to reject a
-    // duplicate row outright if two requests race.
-    await db
+    // duplicate row outright if two requests race. Only the request whose
+    // insert actually lands (the `returning` row is non-empty) notifies —
+    // otherwise a race would double-notify the target for one logical follow.
+    const inserted = await db
       .insert(follows)
       .values({ followerId: session.userId, followingId: targetUserId })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ followerId: follows.followerId });
 
-    await db.insert(notifications).values({
-      recipientId: targetUserId,
-      actorId: session.userId,
-      type: "follow",
-    });
-    await publishToChannel(`user:${targetUserId}:notifications`, "new", { type: "follow" });
+    if (inserted.length > 0) {
+      await db.insert(notifications).values({
+        recipientId: targetUserId,
+        actorId: session.userId,
+        type: "follow",
+      });
+      await publishToChannel(`user:${targetUserId}:notifications`, "new", { type: "follow" });
+    }
   }
 
   revalidatePath(`/${targetUsername}`);
