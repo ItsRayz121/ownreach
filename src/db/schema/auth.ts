@@ -41,7 +41,29 @@ export const siweNonces = pgTable("siwe_nonces", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export interface TelegramProfile {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+}
+
+// Bot-deep-link Telegram login: a browser starts a request (pending), our
+// bot's webhook confirms it once the user hits Start in Telegram, and the
+// browser's poll consumes it exactly once via an atomic
+// `status = 'confirmed'` claim — see /api/auth/telegram/{start,status}.
+export const telegramLoginRequests = pgTable("telegram_login_requests", {
+  token: text("token").primaryKey(),
+  mode: text("mode", { enum: ["signin", "link"] }).notNull(),
+  linkUserId: uuid("link_user_id").references(() => users.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["pending", "confirmed"] }).notNull().default("pending"),
+  telegramProfile: jsonb("telegram_profile").$type<TelegramProfile>(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type AuthAccount = typeof authAccounts.$inferSelect;
 export type NewAuthAccount = typeof authAccounts.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+export type TelegramLoginRequest = typeof telegramLoginRequests.$inferSelect;
