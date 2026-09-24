@@ -6,8 +6,12 @@ import { PostCard } from "@/components/post/post-card";
 import { CommentComposer } from "@/components/post/comment-composer";
 import { CommentList } from "@/components/post/comment-list";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function PostDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!UUID_RE.test(id)) notFound();
+
   const session = await verifySession();
 
   const post = await getPostById(id, session?.userId);

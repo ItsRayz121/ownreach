@@ -11,8 +11,23 @@ const updateProfileSchema = z.object({
   displayName: z.string().trim().min(1, "Display name is required.").max(60),
   bio: z.string().trim().max(280).optional().or(z.literal("")),
   location: z.string().trim().max(60).optional().or(z.literal("")),
-  website: z.string().trim().url("Enter a full URL, including https://").max(200).optional().or(z.literal("")),
+  website: z
+    .string()
+    .trim()
+    .url("Enter a full URL, including https://")
+    .max(200)
+    .refine((url) => /^https?:\/\//i.test(url), "Only http:// or https:// links are allowed.")
+    .optional()
+    .or(z.literal("")),
 });
+
+function isCloudinaryUrl(url: string) {
+  try {
+    return new URL(url).hostname === "res.cloudinary.com";
+  } catch {
+    return false;
+  }
+}
 
 export async function updateProfile(input: z.infer<typeof updateProfileSchema>) {
   const session = await verifySession();
@@ -37,6 +52,8 @@ export async function updateProfile(input: z.infer<typeof updateProfileSchema>) 
 export async function updateProfileImage(kind: "avatar" | "cover", url: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in.");
+
+  if (!isCloudinaryUrl(url)) throw new Error("Image must be uploaded through Cloudinary.");
 
   await db
     .update(profiles)

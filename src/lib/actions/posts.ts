@@ -9,7 +9,11 @@ import { verifySession } from "@/lib/auth/session";
 
 const createPostSchema = z.object({
   body: z.string().trim().min(1, "Say something first.").max(2000, "Posts are capped at 2000 characters."),
-  mediaUrl: z.string().url().optional(),
+  mediaUrl: z
+    .string()
+    .url()
+    .refine((url) => new URL(url).hostname === "res.cloudinary.com", "Media must be uploaded through Cloudinary.")
+    .optional(),
   mediaWidth: z.number().int().positive().optional(),
   mediaHeight: z.number().int().positive().optional(),
 });
