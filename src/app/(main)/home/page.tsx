@@ -12,9 +12,9 @@ export const metadata = { title: "Home / OwnReach", robots: { index: false } };
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; cursor?: string }>;
+  searchParams: Promise<{ tab?: string; cursor?: string; compose?: string }>;
 }) {
-  const { tab, cursor } = await searchParams;
+  const { tab, cursor, compose } = await searchParams;
   const session = await verifySession();
   const scope = tab === "following" ? "following" : "for-you";
 
@@ -27,7 +27,13 @@ export default async function HomePage({
         <Tab href="/home?tab=following" active={scope === "following"} label="Following" />
       </div>
 
-      {session && <PostComposer displayName={session.displayName ?? "You"} avatarUrl={session.avatarUrl} />}
+      {session && (
+        <PostComposer
+          displayName={session.displayName ?? "You"}
+          avatarUrl={session.avatarUrl}
+          autoFocus={compose === "1"}
+        />
+      )}
 
       {items.length === 0 ? (
         <EmptyState

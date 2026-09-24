@@ -12,13 +12,30 @@ function redirectWithError(req: NextRequest, message: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const googleError = req.nextUrl.searchParams.get("error");
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
   const cookieStore = await cookies();
   const rawStateCookie = cookieStore.get(GOOGLE_STATE_COOKIE)?.value;
   cookieStore.delete(GOOGLE_STATE_COOKIE);
 
+  if (googleError) {
+    return redirectWithError(req, googleError === "access_denied" ? "google_cancelled" : "google_auth_failed");
+  }
+
   if (!code || !state || !rawStateCookie) {
+    // Almost always a config/deployment mismatch, not a real "expired session":
+    // the state cookie is host-only, so it silently disappears if the request
+    // that started the flow and this callback landed on different hosts
+    // (e.g. NEXT_PUBLIC_APP_URL pointing at a domain other than the one the
+    // user is actually browsing). Logged to make that distinguishable from a
+    // genuinely stale/expired cookie in Vercel's function logs.
+    console.warn("Google callback missing_state", {
+      host: req.nextUrl.host,
+      hasCode: Boolean(code),
+      hasState: Boolean(state),
+      hasCookie: Boolean(rawStateCookie),
+    });
     return redirectWithError(req, "missing_state");
   }
 

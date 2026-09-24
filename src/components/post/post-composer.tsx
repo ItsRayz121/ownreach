@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { Bold, Italic, Link2, ImagePlus, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,15 +16,24 @@ interface PostComposerProps {
   displayName: string;
   avatarUrl?: string | null;
   onPosted?: () => void;
+  autoFocus?: boolean;
 }
 
-export function PostComposer({ displayName, avatarUrl, onPosted }: PostComposerProps) {
+export function PostComposer({ displayName, avatarUrl, onPosted, autoFocus }: PostComposerProps) {
   const [body, setBody] = useState("");
   const [media, setMedia] = useState<{ url: string; width: number; height: number } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    textareaRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    textareaRef.current?.focus();
+    // Only ever run once, for the initial "Create" nav click — not on every re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function wrapSelection(before: string, after: string = before) {
     const el = textareaRef.current;

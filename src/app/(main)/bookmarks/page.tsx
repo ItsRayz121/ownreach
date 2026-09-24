@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Bookmark } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
@@ -7,11 +8,16 @@ import { EmptyState } from "@/components/empty-state";
 
 export const metadata = { title: "Bookmarks / OwnReach", robots: { index: false } };
 
-export default async function BookmarksPage() {
+export default async function BookmarksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cursor?: string }>;
+}) {
+  const { cursor } = await searchParams;
   const session = await verifySession();
   if (!session) redirect("/login");
 
-  const posts = await getBookmarkedPosts(session.userId);
+  const { items, nextCursor } = await getBookmarkedPosts(session.userId, cursor);
 
   return (
     <div>
@@ -19,14 +25,25 @@ export default async function BookmarksPage() {
         <h1 className="text-lg font-semibold">Bookmarks</h1>
       </div>
 
-      {posts.length === 0 ? (
+      {items.length === 0 ? (
         <EmptyState
           icon={Bookmark}
           title="No bookmarks yet"
           description="Tap the bookmark icon on any post to save it here."
         />
       ) : (
-        posts.map((post) => <PostCard key={post.id} post={post} isAuthenticated viewerId={session.userId} />)
+        <>
+          {items.map((post) => (
+            <PostCard key={post.id} post={post} isAuthenticated viewerId={session.userId} />
+          ))}
+          {nextCursor && (
+            <div className="p-4 text-center">
+              <Link href={`/bookmarks?cursor=${nextCursor}`} className="text-primary text-sm font-medium hover:underline">
+                Load more
+              </Link>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

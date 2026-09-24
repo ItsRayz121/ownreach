@@ -9,6 +9,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   missing_state: "Your sign-in session expired. Please try again.",
   invalid_state: "Your sign-in session expired. Please try again.",
   state_mismatch: "Something looked off with that sign-in attempt. Please try again.",
+  google_cancelled: "Google sign-in was cancelled.",
   google_auth_failed: "Google sign-in failed. Please try again.",
   already_linked: "That account is already linked to a different OwnReach profile.",
   not_authenticated: "Sign in first, then connect another account from Settings.",

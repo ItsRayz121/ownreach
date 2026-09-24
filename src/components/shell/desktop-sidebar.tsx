@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Bookmark } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { buildNavItems } from "./nav-items";
@@ -16,9 +16,6 @@ interface DesktopSidebarProps {
 export function DesktopSidebar({ username, displayName }: DesktopSidebarProps) {
   const pathname = usePathname();
   const items = buildNavItems(username);
-  if (username) {
-    items.splice(3, 0, { label: "Bookmarks", href: "/bookmarks", icon: Bookmark });
-  }
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col justify-between border-r px-3 py-6 md:flex">

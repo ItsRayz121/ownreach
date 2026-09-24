@@ -182,7 +182,18 @@ export async function getPostById(id: string, viewerId?: string): Promise<FeedPo
   return hydrated;
 }
 
-export async function getBookmarkedPosts(viewerId: string) {
+export async function getBookmarkedPosts(viewerId: string, cursor?: string) {
+  // Ordered by when the post was bookmarked, not when it was authored, so the
+  // cursor is (bookmarks.createdAt, bookmarks.postId) rather than the
+  // posts-table cursor other feeds use.
+  const decoded = decodeCursor(cursor);
+  const cursorFilter = decoded
+    ? or(
+        lt(bookmarks.createdAt, decoded.createdAt),
+        and(eq(bookmarks.createdAt, decoded.createdAt), lt(bookmarks.postId, decoded.id))
+      )
+    : undefined;
+
   const rows = await db
     .select({
       id: posts.id,
@@ -190,15 +201,19 @@ export async function getBookmarkedPosts(viewerId: string) {
       createdAt: posts.createdAt,
       edited: posts.edited,
       author: authorSelection,
+      bookmarkedAt: bookmarks.createdAt,
     })
     .from(bookmarks)
     .innerJoin(posts, eq(posts.id, bookmarks.postId))
     .innerJoin(profiles, eq(profiles.userId, posts.authorId))
-    .where(and(eq(bookmarks.userId, viewerId), isNull(posts.deletedAt)))
-    .orderBy(desc(bookmarks.createdAt))
+    .where(and(eq(bookmarks.userId, viewerId), isNull(posts.deletedAt), cursorFilter))
+    .orderBy(desc(bookmarks.createdAt), desc(bookmarks.postId))
     .limit(PAGE_SIZE);
 
-  return hydratePosts(rows, viewerId);
+  const items = await hydratePosts(rows, viewerId);
+  const last = rows.at(-1);
+  const nextCursor = rows.length === PAGE_SIZE && last ? encodeCursor({ createdAt: last.bookmarkedAt, id: last.id }) : null;
+  return { items, nextCursor };
 }
 
 export async function searchPosts(query: string, viewerId?: string) {
