@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { UserAvatar } from "@/components/user-avatar";
 import { RichText } from "./rich-text";
+import { CommentDeleteButton } from "./comment-delete-button";
 import { formatRelativeTime } from "@/lib/format";
 import { EmptyState } from "@/components/empty-state";
 import { MessageCircle } from "lucide-react";
 import type { CommentWithAuthor } from "@/lib/data/comments";
 
-export function CommentList({ comments }: { comments: CommentWithAuthor[] }) {
+export function CommentList({
+  comments,
+  postId,
+  viewerId,
+}: {
+  comments: CommentWithAuthor[];
+  postId: string;
+  viewerId?: string;
+}) {
   if (comments.length === 0) {
     return <EmptyState icon={MessageCircle} title="No replies yet" description="Be the first to say something." />;
   }
@@ -25,6 +34,7 @@ export function CommentList({ comments }: { comments: CommentWithAuthor[] }) {
               </Link>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{formatRelativeTime(comment.createdAt)}</span>
+              {viewerId === comment.author.userId && <CommentDeleteButton commentId={comment.id} postId={postId} />}
             </div>
             <div className="mt-0.5 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap">
               <RichText text={comment.body} />

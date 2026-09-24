@@ -4,6 +4,7 @@ import { BadgeCheck } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import { ReactionBar } from "./reaction-bar";
 import { RichText } from "./rich-text";
+import { PostActionsMenu } from "./post-actions-menu";
 import { formatRelativeTime } from "@/lib/format";
 import type { FeedPost } from "@/lib/data/posts";
 
@@ -12,9 +13,11 @@ interface PostCardProps {
   isAuthenticated: boolean;
   /** Renders as a static block instead of a link-to-detail wrapper — used on the post detail page itself. */
   isDetail?: boolean;
+  /** Signed-in viewer's user id — shows the delete menu when it matches the post's author. */
+  viewerId?: string;
 }
 
-export function PostCard({ post, isAuthenticated, isDetail }: PostCardProps) {
+export function PostCard({ post, isAuthenticated, isDetail, viewerId }: PostCardProps) {
   const body = (
     <div className="flex gap-3 px-4 py-3.5">
       <Link href={`/${post.author.username}`} className="shrink-0">
@@ -33,6 +36,9 @@ export function PostCard({ post, isAuthenticated, isDetail }: PostCardProps) {
           <Link href={`/post/${post.id}`} className="text-muted-foreground shrink-0 hover:underline">
             {formatRelativeTime(post.createdAt)}
           </Link>
+          {viewerId === post.author.userId && (
+            <PostActionsMenu postId={post.id} redirectTo={isDetail ? "/home" : undefined} />
+          )}
         </div>
 
         <div className="mt-0.5 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word">

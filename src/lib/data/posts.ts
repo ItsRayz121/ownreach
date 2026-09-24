@@ -182,6 +182,25 @@ export async function getPostById(id: string, viewerId?: string): Promise<FeedPo
   return hydrated;
 }
 
+export async function getBookmarkedPosts(viewerId: string) {
+  const rows = await db
+    .select({
+      id: posts.id,
+      body: posts.body,
+      createdAt: posts.createdAt,
+      edited: posts.edited,
+      author: authorSelection,
+    })
+    .from(bookmarks)
+    .innerJoin(posts, eq(posts.id, bookmarks.postId))
+    .innerJoin(profiles, eq(profiles.userId, posts.authorId))
+    .where(and(eq(bookmarks.userId, viewerId), isNull(posts.deletedAt)))
+    .orderBy(desc(bookmarks.createdAt))
+    .limit(PAGE_SIZE);
+
+  return hydratePosts(rows, viewerId);
+}
+
 export async function searchPosts(query: string, viewerId?: string) {
   const rows = await db
     .select({

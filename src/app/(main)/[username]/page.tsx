@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText } from "lucide-react";
+import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
 import { getProfileByUsername, getProfileCounts } from "@/lib/data/profiles";
 import { isFollowing } from "@/lib/data/follows";
@@ -46,9 +46,14 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
             className="border-background size-24 border-4"
           />
           {isOwnProfile ? (
-            <Button render={<Link href="/settings/profile" />} nativeButton={false} variant="outline">
-              Edit profile
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button render={<Link href="/bookmarks" aria-label="Bookmarks" />} nativeButton={false} variant="outline" size="icon">
+                <Bookmark className="size-4" />
+              </Button>
+              <Button render={<Link href="/settings/profile" />} nativeButton={false} variant="outline">
+                Edit profile
+              </Button>
+            </div>
           ) : session ? (
             <FollowButton targetUserId={profile.userId} targetUsername={profile.username} initiallyFollowing={following} />
           ) : (
@@ -112,7 +117,9 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
             description={isOwnProfile ? "Share your first post from the Home tab." : `@${profile.username} hasn't posted yet.`}
           />
         ) : (
-          posts.map((post) => <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} />)
+          posts.map((post) => (
+            <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} />
+          ))
         )}
       </div>
     </div>
