@@ -1,4 +1,5 @@
 import "server-only";
+import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -24,4 +25,12 @@ export function getClientIp(req: NextRequest): string {
   const forwardedFor = req.headers.get("x-forwarded-for");
   if (forwardedFor) return forwardedFor.split(",")[0]!.trim();
   return req.headers.get("x-real-ip") ?? "unknown";
+}
+
+/** Same as getClientIp, for Server Actions, which have no NextRequest to read headers from. */
+export async function getClientIpFromHeaders(): Promise<string> {
+  const hdrs = await headers();
+  const forwardedFor = hdrs.get("x-forwarded-for");
+  if (forwardedFor) return forwardedFor.split(",")[0]!.trim();
+  return hdrs.get("x-real-ip") ?? "unknown";
 }

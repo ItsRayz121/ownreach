@@ -42,6 +42,11 @@ export async function destroySession() {
   cookieStore.delete(SESSION_COOKIE);
 }
 
+/** Security measure for password resets: invalidate every existing session for a user, not just the current one. */
+export async function destroyAllSessionsForUser(userId: string) {
+  await db.delete(sessions).where(eq(sessions.userId, userId));
+}
+
 // Memoized per request — safe to call from multiple Server Components without
 // duplicating the DB round trip.
 export const verifySession = cache(async () => {

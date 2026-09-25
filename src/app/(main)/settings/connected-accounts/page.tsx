@@ -9,7 +9,13 @@ import { EmailLoginForm } from "@/components/auth/email-login-form";
 
 export const metadata = { title: "Connected accounts / OwnReach" };
 
-const PROVIDER_LABELS = { google: "Google", telegram: "Telegram", wallet: "Wallet", email: "Email" } as const;
+const PROVIDER_LABELS = {
+  google: "Google",
+  telegram: "Telegram",
+  wallet: "Wallet",
+  email: "Email",
+  password: "Password",
+} as const;
 
 export default async function ConnectedAccountsPage() {
   const session = await verifySession();

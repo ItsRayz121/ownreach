@@ -1,7 +1,7 @@
 import { pgEnum, pgTable, jsonb, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
-export const authProviderEnum = pgEnum("auth_provider", ["google", "telegram", "wallet", "email"]);
+export const authProviderEnum = pgEnum("auth_provider", ["google", "telegram", "wallet", "email", "password"]);
 
 // One row per linked identity. A single `users` row can have up to one account
 // per provider — this is what makes multi-provider account linking possible.
@@ -13,8 +13,10 @@ export const authAccounts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     provider: authProviderEnum("provider").notNull(),
-    // google -> Google `sub`; telegram -> Telegram numeric user id; wallet -> checksummed address
+    // google -> Google `sub`; telegram -> Telegram numeric user id; wallet -> checksummed address; password -> normalized email
     providerAccountId: text("provider_account_id").notNull(),
+    // Only set for provider = "password" — an Argon2id encoded hash string (self-describing: algorithm/cost params travel with it).
+    passwordHash: text("password_hash"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -76,9 +78,22 @@ export const emailLoginRequests = pgTable("email_login_requests", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Single-use password-reset link — kept separate from emailLoginRequests
+// since a reset is tied to an existing password credential, not a
+// signin/link decision, and conflating the two would make both harder to reason about.
+export const passwordResetRequests = pgTable("password_reset_requests", {
+  token: text("token").primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type AuthAccount = typeof authAccounts.$inferSelect;
 export type NewAuthAccount = typeof authAccounts.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type TelegramLoginRequest = typeof telegramLoginRequests.$inferSelect;
 export type EmailLoginRequest = typeof emailLoginRequests.$inferSelect;
+export type PasswordResetRequest = typeof passwordResetRequests.$inferSelect;

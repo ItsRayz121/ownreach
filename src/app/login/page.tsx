@@ -2,7 +2,7 @@ import Link from "next/link";
 import { GoogleButton } from "@/components/auth/google-button";
 import { TelegramLoginButton } from "@/components/auth/telegram-login-button";
 import { WalletConnectButton } from "@/components/auth/wallet-connect-button";
-import { EmailLoginForm } from "@/components/auth/email-login-form";
+import { PasswordAuthForm } from "@/components/auth/password-auth-form";
 
 export const metadata = { title: "Log in / OwnReach", robots: { index: false } };
 
@@ -57,11 +57,11 @@ export default async function LoginPage({
           <div className="h-px flex-1 bg-border" />
         </div>
 
-        <EmailLoginForm />
+        <PasswordAuthForm />
 
         <p className="text-muted-foreground mt-8 text-center text-xs text-balance">
-          We never ask for your password, seed phrase, or private key. Wallet sign-in only requests a
-          message signature.
+          Your password is never shared with Google, Telegram, or your wallet. Wallet sign-in only ever
+          requests a message signature — never your seed phrase or private key.
         </p>
       </div>
     </div>

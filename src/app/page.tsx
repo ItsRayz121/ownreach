@@ -46,7 +46,8 @@ export default async function LandingPage() {
       </main>
 
       <footer className="text-muted-foreground border-t px-6 py-6 text-center text-xs">
-        We never ask for your password, seed phrase, or private key.
+        We&apos;ll never ask for your seed phrase or private key. Your password is stored securely and never
+        shared with any connected provider.
       </footer>
     </div>
   );

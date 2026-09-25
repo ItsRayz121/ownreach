@@ -23,6 +23,8 @@ const RESERVED_USERNAMES = new Set([
   "messages",
   "notifications",
   "bookmarks",
+  "communities",
+  "community",
   "ownreach",
   "support",
   "about",
@@ -30,7 +32,7 @@ const RESERVED_USERNAMES = new Set([
   "user",
 ]);
 
-async function generateUniqueUsername(seed: string) {
+export async function generateUniqueUsername(seed: string) {
   const base =
     seed
       .toLowerCase()

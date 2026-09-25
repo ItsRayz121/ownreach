@@ -4,10 +4,14 @@ import { verifySession } from "@/lib/auth/session";
 import { assertSameOrigin, getClientIp } from "@/lib/auth/http";
 import { checkRateLimitResponse } from "@/lib/ratelimit";
 import { createEmailLoginRequest } from "@/lib/auth/email-login";
+import { emailSchema } from "@/lib/auth/validation";
 
+// Login/signup now goes through password auth (see lib/actions/auth.ts) — this
+// route only backs Settings > Connected Accounts' "verify and link an email
+// identity" flow, so `link` is required rather than optional.
 const bodySchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
-  link: z.boolean().optional(),
+  email: emailSchema,
+  link: z.literal(true),
 });
 
 export async function POST(req: NextRequest) {
