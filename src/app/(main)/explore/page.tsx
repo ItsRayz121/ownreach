@@ -9,8 +9,8 @@ import { EmptyState } from "@/components/empty-state";
 
 export const metadata = { title: "Explore / OwnReach" };
 
-export default async function ExplorePage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
+export default async function ExplorePage({ searchParams }: { searchParams: Promise<{ q?: string; focus?: string }> }) {
+  const { q, focus } = await searchParams;
   const query = q?.trim();
   const session = await verifySession();
 
@@ -23,7 +23,13 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
       <div className="bg-background/95 sticky top-0 z-20 border-b p-4 backdrop-blur supports-backdrop-filter:bg-background/80">
         <form action="/explore" className="relative">
           <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input name="q" defaultValue={query} placeholder="Search creators, posts, #hashtags" className="pl-9" />
+          <Input
+            name="q"
+            defaultValue={query}
+            placeholder="Search creators, posts, #hashtags"
+            className="pl-9"
+            autoFocus={focus === "1"}
+          />
         </form>
       </div>
 

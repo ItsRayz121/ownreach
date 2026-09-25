@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Bell, ShieldCheck } from "lucide-react";
+import { LogOut, Bell, Bookmark, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { buildNavItems } from "./nav-items";
@@ -49,6 +49,20 @@ export function DesktopSidebar({ userId, username, displayName, unreadNotificati
               </li>
             );
           })}
+          {username && (
+            <li>
+              <Link
+                href="/bookmarks"
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors",
+                  pathname === "/bookmarks" ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-accent/60"
+                )}
+              >
+                <Bookmark className="size-5" strokeWidth={pathname === "/bookmarks" ? 2.4 : 2} />
+                Bookmarks
+              </Link>
+            </li>
+          )}
           {username && userId && (
             <li>
               <NotificationBell userId={userId} initialUnread={unreadNotifications > 0}>
