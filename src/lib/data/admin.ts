@@ -1,7 +1,7 @@
 import "server-only";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { comments, posts, profiles, reports, users, type Report } from "@/db/schema";
+import { channelMessages, comments, posts, profiles, reports, users, type Report } from "@/db/schema";
 
 export interface ReportItem {
   id: string;
@@ -34,8 +34,9 @@ export async function listOpenReports(): Promise<ReportItem[]> {
   const postIds = rows.filter((r) => r.targetType === "post").map((r) => r.targetId);
   const commentIds = rows.filter((r) => r.targetType === "comment").map((r) => r.targetId);
   const userTargetIds = rows.filter((r) => r.targetType === "user").map((r) => r.targetId);
+  const communityMessageIds = rows.filter((r) => r.targetType === "community_message").map((r) => r.targetId);
 
-  const [reporters, postRows, commentRows, userRows] = await Promise.all([
+  const [reporters, postRows, commentRows, userRows, communityMessageRows] = await Promise.all([
     db
       .select({ userId: profiles.userId, username: profiles.username, displayName: profiles.displayName })
       .from(profiles)
@@ -49,12 +50,16 @@ export async function listOpenReports(): Promise<ReportItem[]> {
     userTargetIds.length
       ? db.select({ userId: profiles.userId, username: profiles.username }).from(profiles).where(inArray(profiles.userId, userTargetIds))
       : Promise.resolve([]),
+    communityMessageIds.length
+      ? db.select({ id: channelMessages.id, body: channelMessages.body }).from(channelMessages).where(inArray(channelMessages.id, communityMessageIds))
+      : Promise.resolve([]),
   ]);
 
   const reporterMap = new Map(reporters.map((r) => [r.userId, r]));
   const postMap = new Map(postRows.map((p) => [p.id, p.body]));
   const commentMap = new Map(commentRows.map((c) => [c.id, c.body]));
   const userMap = new Map(userRows.map((u) => [u.userId, `@${u.username}`]));
+  const communityMessageMap = new Map(communityMessageRows.map((m) => [m.id, m.body]));
 
   return rows.map((r) => ({
     id: r.id,
@@ -68,7 +73,9 @@ export async function listOpenReports(): Promise<ReportItem[]> {
         ? (postMap.get(r.targetId) ?? null)
         : r.targetType === "comment"
           ? (commentMap.get(r.targetId) ?? null)
-          : (userMap.get(r.targetId) ?? null),
+          : r.targetType === "community_message"
+            ? (communityMessageMap.get(r.targetId) ?? null)
+            : (userMap.get(r.targetId) ?? null),
   }));
 }
 

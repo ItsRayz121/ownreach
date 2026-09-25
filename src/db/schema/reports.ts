@@ -1,7 +1,7 @@
 import { index, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
-export const reportTargetTypeEnum = pgEnum("report_target_type", ["post", "comment", "user"]);
+export const reportTargetTypeEnum = pgEnum("report_target_type", ["post", "comment", "user", "community_message"]);
 export const reportStatusEnum = pgEnum("report_status", ["open", "resolved", "dismissed"]);
 
 export const reports = pgTable(
@@ -12,8 +12,8 @@ export const reports = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     targetType: reportTargetTypeEnum("target_type").notNull(),
-    // No FK — polymorphic (points at posts.id, comments.id, or users.id
-    // depending on targetType), resolved by lookup in lib/data/admin.ts.
+    // No FK — polymorphic (points at posts.id, comments.id, users.id, or
+    // channelMessages.id depending on targetType), resolved by lookup in lib/data/admin.ts.
     targetId: uuid("target_id").notNull(),
     reason: text("reason").notNull(),
     status: reportStatusEnum("status").notNull().default("open"),

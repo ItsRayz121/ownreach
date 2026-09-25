@@ -7,3 +7,4 @@ export * from "./comments";
 export * from "./notifications";
 export * from "./messages";
 export * from "./reports";
+export * from "./communities";
