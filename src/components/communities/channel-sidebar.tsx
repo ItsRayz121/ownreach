@@ -6,7 +6,8 @@ import { Hash, Settings } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
 import { CreateChannelDialog } from "./create-channel-dialog";
-import { isCommunityManager, type ChannelSummary } from "@/lib/data/communities";
+import type { ChannelSummary } from "@/lib/data/communities";
+import { isCommunityManager } from "@/lib/community-roles";
 import type { CommunityMember } from "@/db/schema";
 
 interface ChannelSidebarProps {

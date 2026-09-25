@@ -1,6 +1,6 @@
 import { UserAvatar } from "@/components/user-avatar";
 import { MemberRowActionsMenu } from "./member-row-actions-menu";
-import { isCommunityManager } from "@/lib/data/communities";
+import { isCommunityManager } from "@/lib/community-roles";
 import type { CommunityMember } from "@/db/schema";
 
 interface MemberRow {

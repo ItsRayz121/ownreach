@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { verifySession } from "@/lib/auth/session";
-import { getCommunityBySlugOrId, getMembership, isCommunityManager, listMembers } from "@/lib/data/communities";
+import { getCommunityBySlugOrId, getMembership, listMembers } from "@/lib/data/communities";
+import { isCommunityManager } from "@/lib/community-roles";
 import { CommunitySettingsForm } from "@/components/communities/community-settings-form";
 import { MemberList } from "@/components/communities/member-list";
 
