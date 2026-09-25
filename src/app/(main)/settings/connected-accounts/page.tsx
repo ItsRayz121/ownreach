@@ -6,6 +6,8 @@ import { GoogleButton } from "@/components/auth/google-button";
 import { TelegramLoginButton } from "@/components/auth/telegram-login-button";
 import { WalletConnectButton } from "@/components/auth/wallet-connect-button";
 import { EmailLoginForm } from "@/components/auth/email-login-form";
+import { SetPasswordForm } from "@/components/auth/set-password-form";
+import { ChangePasswordForm } from "@/components/auth/change-password-form";
 
 export const metadata = { title: "Connected accounts / OwnReach" };
 
@@ -50,6 +52,7 @@ export default async function ConnectedAccountsPage() {
         {!linkedProviders.has("telegram") && <TelegramLoginButton link />}
         {!linkedProviders.has("wallet") && <WalletConnectButton link />}
         {!linkedProviders.has("email") && <EmailLoginForm link />}
+        {linkedProviders.has("password") ? <ChangePasswordForm /> : <SetPasswordForm />}
       </div>
     </div>
   );

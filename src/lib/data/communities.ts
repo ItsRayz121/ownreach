@@ -16,6 +16,7 @@ export interface CommunitySummary {
   memberCount: number;
   role: CommunityMember["role"] | null;
   createdAt: Date;
+  unread: boolean;
 }
 
 export interface ChannelSummary {
@@ -73,6 +74,34 @@ async function withMemberCounts(rows: { id: string }[]): Promise<Map<string, num
   return new Map(counts.map((c) => [c.communityId, c.value]));
 }
 
+/**
+ * Community-level unread, not per-channel — communityMembers.lastReadAt is
+ * bumped by markCommunityRead regardless of which channel was open, so this
+ * mirrors that granularity rather than promising precision it can't back.
+ */
+async function withUnread(rows: { id: string; lastReadAt: Date | null }[], userId: string): Promise<Map<string, boolean>> {
+  if (rows.length === 0) return new Map();
+  const communityIds = rows.map((r) => r.id);
+  const latest = await db
+    .selectDistinctOn([channels.communityId], {
+      communityId: channels.communityId,
+      senderId: channelMessages.senderId,
+      createdAt: channelMessages.createdAt,
+    })
+    .from(channelMessages)
+    .innerJoin(channels, eq(channels.id, channelMessages.channelId))
+    .where(inArray(channels.communityId, communityIds))
+    .orderBy(channels.communityId, desc(channelMessages.createdAt));
+
+  const latestMap = new Map(latest.map((m) => [m.communityId, m]));
+  return new Map(
+    rows.map((r) => {
+      const lastMessage = latestMap.get(r.id);
+      return [r.id, Boolean(lastMessage && lastMessage.senderId !== userId && (!r.lastReadAt || lastMessage.createdAt > r.lastReadAt))];
+    })
+  );
+}
+
 /** A user's communities, sorted by most recently joined. Not cursor-paginated — personal-sized list, like listConversations. */
 export async function listMyCommunities(userId: string): Promise<CommunitySummary[]> {
   const rows = await db
@@ -86,13 +115,14 @@ export async function listMyCommunities(userId: string): Promise<CommunitySummar
       createdAt: communities.createdAt,
       role: communityMembers.role,
       joinedAt: communityMembers.joinedAt,
+      lastReadAt: communityMembers.lastReadAt,
     })
     .from(communityMembers)
     .innerJoin(communities, eq(communities.id, communityMembers.communityId))
     .where(eq(communityMembers.userId, userId))
     .orderBy(desc(communityMembers.joinedAt));
 
-  const memberCounts = await withMemberCounts(rows);
+  const [memberCounts, unreadMap] = await Promise.all([withMemberCounts(rows), withUnread(rows, userId)]);
   return rows.map((r) => ({
     id: r.id,
     slug: r.slug,
@@ -103,7 +133,13 @@ export async function listMyCommunities(userId: string): Promise<CommunitySummar
     memberCount: memberCounts.get(r.id) ?? 0,
     role: r.role,
     createdAt: r.createdAt,
+    unread: unreadMap.get(r.id) ?? false,
   }));
+}
+
+export async function hasUnreadCommunities(userId: string): Promise<boolean> {
+  const items = await listMyCommunities(userId);
+  return items.some((c) => c.unread);
 }
 
 /** Public community browse/search — cursor-paginated since, unlike listMyCommunities, this is an unbounded public surface. */
@@ -166,6 +202,7 @@ export async function listDiscoverableCommunities(opts: {
       memberCount: memberCounts.get(r.id) ?? 0,
       role: roleMap.get(r.id) ?? null,
       createdAt: r.createdAt,
+      unread: false,
     })),
     nextCursor,
   };

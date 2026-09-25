@@ -5,9 +5,15 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { buildNavItems } from "./nav-items";
 
-export function MobileBottomNav({ username }: { username?: string }) {
+interface MobileBottomNavProps {
+  username?: string;
+  unreadMessages?: boolean;
+  unreadCommunities?: boolean;
+}
+
+export function MobileBottomNav({ username, unreadMessages = false, unreadCommunities = false }: MobileBottomNavProps) {
   const pathname = usePathname();
-  const items = buildNavItems(username);
+  const items = buildNavItems(username, { messages: unreadMessages, communities: unreadCommunities });
 
   return (
     <nav className="bg-background/95 pb-safe transform-gpu fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur supports-backdrop-filter:bg-background/80 md:hidden">
@@ -25,7 +31,10 @@ export function MobileBottomNav({ username }: { username?: string }) {
                 )}
                 aria-current={active ? "page" : undefined}
               >
-                <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
+                <span className="relative">
+                  <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
+                  {item.badge && <span className="bg-primary absolute -top-0.5 -right-1 size-2 rounded-full" />}
+                </span>
                 {item.label}
               </Link>
             </li>

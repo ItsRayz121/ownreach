@@ -1,11 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { and, eq, gt } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { authAccounts, passwordResetRequests, profiles, users } from "@/db/schema";
-import { destroySession, createSession, destroyAllSessionsForUser } from "@/lib/auth/session";
+import { destroySession, createSession, destroyAllSessionsForUser, verifySession } from "@/lib/auth/session";
 import { generateUniqueUsername } from "@/lib/auth/accounts";
 import { hashPassword, verifyPassword, passwordSchema, getDummyPasswordHash } from "@/lib/auth/password";
 import { emailSchema } from "@/lib/auth/validation";
@@ -173,4 +174,72 @@ export async function resetPassword(input: { token: string; password: string }):
   await destroyAllSessionsForUser(claimed.userId);
   await createSession(claimed.userId);
   redirect("/home");
+}
+
+/** For OAuth/Telegram/wallet-only accounts adding password sign-in for the first time. */
+export async function setPassword(input: { email: string; password: string }): Promise<ActionResult> {
+  const session = await verifySession();
+  if (!session) return { ok: false, error: "You must be signed in." };
+
+  const parsed = z.object({ email: emailSchema, password: passwordSchema }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { email, password } = parsed.data;
+
+  const [existing] = await db
+    .select({ id: authAccounts.id })
+    .from(authAccounts)
+    .where(and(eq(authAccounts.provider, "password"), eq(authAccounts.userId, session.userId)))
+    .limit(1);
+  if (existing) return { ok: false, error: "This account already has a password. Use “Change password” instead." };
+
+  const passwordHash = await hashPassword(password);
+  try {
+    await db.insert(authAccounts).values({
+      userId: session.userId,
+      provider: "password",
+      providerAccountId: email,
+      passwordHash,
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) return { ok: false, error: ALREADY_REGISTERED };
+    throw err;
+  }
+
+  // Backfills users.email for an account that signed up via a provider that
+  // never collected one (e.g. wallet, Telegram) — doesn't overwrite an
+  // existing address.
+  await db.update(users).set({ email }).where(and(eq(users.id, session.userId), isNull(users.email)));
+
+  revalidatePath("/settings/connected-accounts");
+  return { ok: true };
+}
+
+export async function changePassword(input: { currentPassword: string; newPassword: string }): Promise<ActionResult> {
+  const session = await verifySession();
+  if (!session) return { ok: false, error: "You must be signed in." };
+
+  const parsed = z
+    .object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { currentPassword, newPassword } = parsed.data;
+
+  const [account] = await db
+    .select()
+    .from(authAccounts)
+    .where(and(eq(authAccounts.provider, "password"), eq(authAccounts.userId, session.userId)))
+    .limit(1);
+  if (!account?.passwordHash) return { ok: false, error: "No password is set on this account yet." };
+
+  const valid = await verifyPassword(currentPassword, account.passwordHash);
+  if (!valid) return { ok: false, error: "Current password is incorrect." };
+
+  const passwordHash = await hashPassword(newPassword);
+  await db.update(authAccounts).set({ passwordHash }).where(eq(authAccounts.id, account.id));
+
+  await destroyAllSessionsForUser(session.userId);
+  await createSession(session.userId);
+
+  revalidatePath("/settings/connected-accounts");
+  return { ok: true };
 }

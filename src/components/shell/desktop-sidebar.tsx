@@ -14,12 +14,22 @@ interface DesktopSidebarProps {
   username?: string;
   displayName?: string;
   unreadNotifications?: number;
+  unreadMessages?: boolean;
+  unreadCommunities?: boolean;
   isAdmin?: boolean;
 }
 
-export function DesktopSidebar({ userId, username, displayName, unreadNotifications = 0, isAdmin = false }: DesktopSidebarProps) {
+export function DesktopSidebar({
+  userId,
+  username,
+  displayName,
+  unreadNotifications = 0,
+  unreadMessages = false,
+  unreadCommunities = false,
+  isAdmin = false,
+}: DesktopSidebarProps) {
   const pathname = usePathname();
-  const items = buildNavItems(username);
+  const items = buildNavItems(username, { messages: unreadMessages, communities: unreadCommunities });
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col justify-between border-r px-3 py-6 md:flex">
@@ -40,7 +50,10 @@ export function DesktopSidebar({ userId, username, displayName, unreadNotificati
                     active ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-accent/60"
                   )}
                 >
-                  <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
+                  <span className="relative">
+                    <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
+                    {item.badge && <span className="bg-primary absolute -top-1 -right-1 size-2 rounded-full" />}
+                  </span>
                   {item.label}
                   {item.comingSoon && (
                     <span className="text-muted-foreground ml-auto text-[10px] tracking-wide uppercase">Soon</span>
