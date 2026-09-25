@@ -2,8 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Bell, Heart, MessageCircle, UserPlus, AtSign } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
-import { listNotifications, type NotificationItem } from "@/lib/data/notifications";
-import { markAllNotificationsRead } from "@/lib/actions/notifications";
+import { listNotifications, markAllNotificationsReadForView, type NotificationItem } from "@/lib/data/notifications";
 import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState } from "@/components/empty-state";
 import { formatRelativeTime } from "@/lib/format";
@@ -43,7 +42,7 @@ export default async function NotificationsPage({
   // Opening the first page clears the unread badge; the list below still
   // reflects each row's read state as of the moment it was fetched, so
   // unread rows stay visually distinct for this visit.
-  if (!cursor) await markAllNotificationsRead();
+  if (!cursor) await markAllNotificationsReadForView(session.userId);
 
   return (
     <div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import { Heart, MessageCircle, Bookmark, Share2 } from "lucide-react";
 import { toggleLike, toggleBookmark } from "@/lib/actions/posts";
@@ -25,9 +25,16 @@ export function ReactionBar({
   isAuthenticated,
 }: ReactionBarProps) {
   const [isPending, startTransition] = useTransition();
-  const [liked, setOptimisticLiked] = useOptimistic(likedByViewer);
-  const [bookmarked, setOptimisticBookmarked] = useOptimistic(bookmarkedByViewer);
-  const [count, setOptimisticCount] = useOptimistic(likeCount);
+  // Confirmed state, reconciled from the server action's response once it
+  // resolves. useOptimistic reverts to this base value when the transition
+  // settles, so without this the like would flash back to stale props until
+  // a full page reload re-fetched the real (now-correct) data.
+  const [likedConfirmed, setLikedConfirmed] = useState(likedByViewer);
+  const [countConfirmed, setCountConfirmed] = useState(likeCount);
+  const [bookmarkedConfirmed, setBookmarkedConfirmed] = useState(bookmarkedByViewer);
+  const [liked, setOptimisticLiked] = useOptimistic(likedConfirmed);
+  const [bookmarked, setOptimisticBookmarked] = useOptimistic(bookmarkedConfirmed);
+  const [count, setOptimisticCount] = useOptimistic(countConfirmed);
 
   function requireAuth() {
     if (!isAuthenticated) {
@@ -39,11 +46,14 @@ export function ReactionBar({
 
   function handleLike() {
     if (!requireAuth()) return;
+    const wasLiked = liked;
     startTransition(async () => {
-      setOptimisticLiked(!liked);
-      setOptimisticCount(liked ? count - 1 : count + 1);
+      setOptimisticLiked(!wasLiked);
+      setOptimisticCount(wasLiked ? count - 1 : count + 1);
       try {
-        await toggleLike(postId);
+        const result = await toggleLike(postId);
+        setLikedConfirmed(result.liked);
+        setCountConfirmed((prev) => (result.liked === wasLiked ? prev : prev + (result.liked ? 1 : -1)));
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Couldn't react to this post.");
       }
@@ -52,10 +62,12 @@ export function ReactionBar({
 
   function handleBookmark() {
     if (!requireAuth()) return;
+    const wasBookmarked = bookmarked;
     startTransition(async () => {
-      setOptimisticBookmarked(!bookmarked);
+      setOptimisticBookmarked(!wasBookmarked);
       try {
-        await toggleBookmark(postId);
+        const result = await toggleBookmark(postId);
+        setBookmarkedConfirmed(result.bookmarked);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Couldn't bookmark this post.");
       }

@@ -10,7 +10,7 @@ export function MobileBottomNav({ username }: { username?: string }) {
   const items = buildNavItems(username);
 
   return (
-    <nav className="bg-background/95 pb-safe fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur supports-backdrop-filter:bg-background/80 md:hidden">
+    <nav className="bg-background/95 pb-safe transform-gpu fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur supports-backdrop-filter:bg-background/80 md:hidden">
       <ul className="flex items-stretch justify-around">
         {items.map((item) => {
           const active = pathname === item.href || (item.href !== "/home" && pathname.startsWith(item.href.split("?")[0]) && item.href !== "/home?compose=1");

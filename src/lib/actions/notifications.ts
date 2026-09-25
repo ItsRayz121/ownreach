@@ -17,15 +17,3 @@ export async function markNotificationRead(id: string) {
 
   revalidatePath("/notifications");
 }
-
-export async function markAllNotificationsRead() {
-  const session = await verifySession();
-  if (!session) throw new Error("You must be signed in.");
-
-  await db
-    .update(notifications)
-    .set({ read: true })
-    .where(and(eq(notifications.recipientId, session.userId), eq(notifications.read, false)));
-
-  revalidatePath("/notifications");
-}

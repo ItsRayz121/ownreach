@@ -2,6 +2,24 @@ import "server-only";
 import { and, count, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { db } from "@/db";
 import { notifications, profiles, type Notification } from "@/db/schema";
+import { verifySession } from "@/lib/auth/session";
+
+// Plain data-layer write (no "use server" / revalidatePath) so it can be
+// called from a Server Component during render — a "use server" action
+// calling revalidatePath is only allowed from a Route Handler or a
+// client-triggered Server Action, not mid-render.
+// Unlike a read-only data helper, a write like this needs its own auth check
+// rather than trusting the caller — verifySession() is request-memoized, so
+// re-checking it here (the current page already calls it too) is free.
+export async function markAllNotificationsReadForView(recipientId: string): Promise<void> {
+  const session = await verifySession();
+  if (!session || session.userId !== recipientId) throw new Error("You must be signed in.");
+
+  await db
+    .update(notifications)
+    .set({ read: true })
+    .where(and(eq(notifications.recipientId, recipientId), eq(notifications.read, false)));
+}
 
 const PAGE_SIZE = 30;
 
