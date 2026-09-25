@@ -5,10 +5,11 @@ import { getLinkedProviders } from "@/lib/auth/accounts";
 import { GoogleButton } from "@/components/auth/google-button";
 import { TelegramLoginButton } from "@/components/auth/telegram-login-button";
 import { WalletConnectButton } from "@/components/auth/wallet-connect-button";
+import { EmailLoginForm } from "@/components/auth/email-login-form";
 
 export const metadata = { title: "Connected accounts / OwnReach" };
 
-const PROVIDER_LABELS = { google: "Google", telegram: "Telegram", wallet: "Wallet" } as const;
+const PROVIDER_LABELS = { google: "Google", telegram: "Telegram", wallet: "Wallet", email: "Email" } as const;
 
 export default async function ConnectedAccountsPage() {
   const session = await verifySession();
@@ -42,6 +43,7 @@ export default async function ConnectedAccountsPage() {
         {!linkedProviders.has("google") && <GoogleButton link label="Connect Google" />}
         {!linkedProviders.has("telegram") && <TelegramLoginButton link />}
         {!linkedProviders.has("wallet") && <WalletConnectButton link />}
+        {!linkedProviders.has("email") && <EmailLoginForm link />}
       </div>
     </div>
   );

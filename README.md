@@ -17,15 +17,16 @@ below for scope. Images only for now — no video.
   driver doesn't support `db.transaction()`, which account linking and post
   creation both rely on)
 - **Auth**: hand-rolled, database-backed sessions (not NextAuth/Auth.js — see
-  below) with three sign-in methods: Google OAuth, Telegram Login, and
-  Sign-In with Ethereum (SIWE / EIP-4361) for wallets
+  below) with four sign-in methods: Google OAuth, Telegram Login,
+  Sign-In with Ethereum (SIWE / EIP-4361) for wallets, and passwordless email
+  (magic link via Resend)
 - **Cloudinary** for image uploads (signed, direct-from-browser)
 - PWA manifest + dynamically generated icons (`next/og`), mobile-first layout
   with a bottom tab bar on mobile and a sidebar on desktop
 
 ### Why not NextAuth/Auth.js?
 
-Two of the three providers (Telegram, wallet/SIWE) need custom verification
+Two of the four providers (Telegram, wallet/SIWE) need custom verification
 logic no matter what, so the usual benefit of a provider-abstraction library
 is smaller here. Given Next.js 16 is very new, we went with the
 database-session pattern from Next's own [authentication
@@ -61,6 +62,7 @@ See `.env.example` for the full list with comments. Summary:
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Avatar/cover/post image uploads | [Cloudinary console](https://console.cloudinary.com), free tier |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Rate limiting writes and login attempts | [Upstash console](https://console.upstash.com), free tier — without these, requests simply aren't throttled |
 | `ABLY_API_KEY` | Live delivery for DMs and notifications | [Ably dashboard](https://ably.com/accounts), free tier — without this, messages/notifications still work via refetch, just not instantly |
+| `RESEND_API_KEY` / `EMAIL_FROM` | "Continue with email" (passwordless magic link) | [Resend](https://resend.com) → API Keys, free tier — `EMAIL_FROM` must be a sender verified on your Resend domain |
 
 Wallet sign-in (SIWE) needs no server credentials — it only needs a browser
 wallet extension (MetaMask, etc.) on the visitor's side.

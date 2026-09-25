@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { follows, notifications } from "@/db/schema";
+import { follows } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { isFollowing } from "@/lib/data/follows";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { publishToChannel } from "@/lib/realtime/ably-server";
+import { insertNotifications, scheduleNotificationPublish } from "@/lib/actions/notify";
 
 export async function toggleFollow(targetUserId: string, targetUsername: string) {
   const session = await verifySession();
@@ -33,12 +33,8 @@ export async function toggleFollow(targetUserId: string, targetUsername: string)
       .returning({ followerId: follows.followerId });
 
     if (inserted.length > 0) {
-      await db.insert(notifications).values({
-        recipientId: targetUserId,
-        actorId: session.userId,
-        type: "follow",
-      });
-      await publishToChannel(`user:${targetUserId}:notifications`, "new", { type: "follow" });
+      await insertNotifications(db, [{ recipientId: targetUserId, actorId: session.userId, type: "follow" }]);
+      scheduleNotificationPublish([{ recipientId: targetUserId, type: "follow" }]);
     }
   }
 

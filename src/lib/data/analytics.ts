@@ -101,6 +101,8 @@ export interface FollowerExportRow {
   followedAt: Date;
 }
 
+const MAX_FOLLOWER_EXPORT_ROWS = 50_000;
+
 /** Ownership is the caller's responsibility — pass the requesting user's own id. */
 export async function getFollowersForExport(userId: string): Promise<FollowerExportRow[]> {
   return db
@@ -108,5 +110,6 @@ export async function getFollowersForExport(userId: string): Promise<FollowerExp
     .from(follows)
     .innerJoin(profiles, eq(profiles.userId, follows.followerId))
     .where(eq(follows.followingId, userId))
-    .orderBy(desc(follows.createdAt));
+    .orderBy(desc(follows.createdAt))
+    .limit(MAX_FOLLOWER_EXPORT_ROWS);
 }

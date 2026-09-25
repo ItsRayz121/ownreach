@@ -1,7 +1,7 @@
 import { pgEnum, pgTable, jsonb, text, timestamp, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
-export const authProviderEnum = pgEnum("auth_provider", ["google", "telegram", "wallet"]);
+export const authProviderEnum = pgEnum("auth_provider", ["google", "telegram", "wallet", "email"]);
 
 // One row per linked identity. A single `users` row can have up to one account
 // per provider — this is what makes multi-provider account linking possible.
@@ -62,8 +62,23 @@ export const telegramLoginRequests = pgTable("telegram_login_requests", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Passwordless email sign-in: a browser posts an email address, we mail a
+// single-use link, and clicking it (the /api/auth/email/verify GET request)
+// both confirms and completes the login in one step — unlike Telegram's
+// pending/confirmed dance, there's no separate out-of-band confirmer here,
+// so the row is deleted atomically on first use instead of status-flipped.
+export const emailLoginRequests = pgTable("email_login_requests", {
+  token: text("token").primaryKey(),
+  email: text("email").notNull(),
+  mode: text("mode", { enum: ["signin", "link"] }).notNull(),
+  linkUserId: uuid("link_user_id").references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type AuthAccount = typeof authAccounts.$inferSelect;
 export type NewAuthAccount = typeof authAccounts.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type TelegramLoginRequest = typeof telegramLoginRequests.$inferSelect;
+export type EmailLoginRequest = typeof emailLoginRequests.$inferSelect;

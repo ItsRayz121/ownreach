@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { comments, posts, notifications, profiles } from "@/db/schema";
+import { comments, posts, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { publishToChannel } from "@/lib/realtime/ably-server";
+import { insertNotifications, scheduleNotificationPublish } from "@/lib/actions/notify";
 
 const createCommentSchema = z.object({
   postId: z.string().uuid(),
@@ -45,13 +45,9 @@ export async function createComment(input: z.infer<typeof createCommentSchema>) 
     if (post && post.authorId !== session.userId) {
       recipientIds.add(post.authorId);
       notified.push({ recipientId: post.authorId, type: "comment" });
-      await tx.insert(notifications).values({
-        recipientId: post.authorId,
-        actorId: session.userId,
-        type: "comment",
-        postId: parsed.postId,
-        commentId: comment.id,
-      });
+      await insertNotifications(tx, [
+        { recipientId: post.authorId, actorId: session.userId, type: "comment", postId: parsed.postId, commentId: comment.id },
+      ]);
     }
 
     const mentionedUsernames = extractMentions(parsed.body);
@@ -65,7 +61,8 @@ export async function createComment(input: z.infer<typeof createCommentSchema>) 
         .filter((id) => id !== session.userId && !recipientIds.has(id));
       if (mentionRecipients.length > 0) {
         for (const recipientId of mentionRecipients) notified.push({ recipientId, type: "mention" });
-        await tx.insert(notifications).values(
+        await insertNotifications(
+          tx,
           mentionRecipients.map((recipientId) => ({
             recipientId,
             actorId: session.userId,
@@ -80,9 +77,7 @@ export async function createComment(input: z.infer<typeof createCommentSchema>) 
     return { commentId: comment.id, notified };
   });
 
-  await Promise.all(
-    notified.map((n) => publishToChannel(`user:${n.recipientId}:notifications`, "new", { type: n.type }))
-  );
+  scheduleNotificationPublish(notified);
 
   revalidatePath(`/post/${parsed.postId}`);
   return { id: commentId };

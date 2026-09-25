@@ -2,6 +2,7 @@ import Link from "next/link";
 import { GoogleButton } from "@/components/auth/google-button";
 import { TelegramLoginButton } from "@/components/auth/telegram-login-button";
 import { WalletConnectButton } from "@/components/auth/wallet-connect-button";
+import { EmailLoginForm } from "@/components/auth/email-login-form";
 
 export const metadata = { title: "Log in / OwnReach", robots: { index: false } };
 
@@ -13,6 +14,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   google_auth_failed: "Google sign-in failed. Please try again.",
   already_linked: "That account is already linked to a different OwnReach profile.",
   not_authenticated: "Sign in first, then connect another account from Settings.",
+  email_link_invalid: "That sign-in link looks broken. Please request a new one.",
+  email_link_expired: "That sign-in link expired or was already used. Please request a new one.",
+  email_auth_failed: "Email sign-in failed. Please try again.",
 };
 
 export default async function LoginPage({
@@ -46,6 +50,14 @@ export default async function LoginPage({
           <TelegramLoginButton />
           <WalletConnectButton />
         </div>
+
+        <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="h-px flex-1 bg-border" />
+          or
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        <EmailLoginForm />
 
         <p className="text-muted-foreground mt-8 text-center text-xs text-balance">
           We never ask for your password, seed phrase, or private key. Wallet sign-in only requests a

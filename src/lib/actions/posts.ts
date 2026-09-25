@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { posts, postMedia, postReactions, bookmarks, hashtags, postHashtags, notifications, profiles } from "@/db/schema";
+import { posts, postMedia, postReactions, bookmarks, hashtags, postHashtags, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { publishToChannel } from "@/lib/realtime/ably-server";
+import { insertNotifications, scheduleNotificationPublish } from "@/lib/actions/notify";
 
 const createPostSchema = z.object({
   body: z.string().trim().min(1, "Say something first.").max(2000, "Posts are capped at 2000 characters."),
@@ -71,7 +71,8 @@ export async function createPost(input: z.infer<typeof createPostSchema>) {
         .where(inArray(profiles.username, mentionedUsernames));
       mentionRecipientIds = mentioned.map((m) => m.userId).filter((id) => id !== session.userId);
       if (mentionRecipientIds.length > 0) {
-        await tx.insert(notifications).values(
+        await insertNotifications(
+          tx,
           mentionRecipientIds.map((recipientId) => ({
             recipientId,
             actorId: session.userId,
@@ -85,9 +86,7 @@ export async function createPost(input: z.infer<typeof createPostSchema>) {
     return { postId: post.id, mentionRecipientIds };
   });
 
-  await Promise.all(
-    mentionRecipientIds.map((recipientId) => publishToChannel(`user:${recipientId}:notifications`, "new", { type: "mention" }))
-  );
+  scheduleNotificationPublish(mentionRecipientIds.map((recipientId) => ({ recipientId, type: "mention" as const })));
 
   revalidatePath("/home");
   return { id: postId };
@@ -137,13 +136,8 @@ export async function toggleLike(postId: string) {
   if (inserted.length > 0) {
     const [post] = await db.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, postId)).limit(1);
     if (post && post.authorId !== session.userId) {
-      await db.insert(notifications).values({
-        recipientId: post.authorId,
-        actorId: session.userId,
-        type: "like",
-        postId,
-      });
-      await publishToChannel(`user:${post.authorId}:notifications`, "new", { type: "like" });
+      await insertNotifications(db, [{ recipientId: post.authorId, actorId: session.userId, type: "like", postId }]);
+      scheduleNotificationPublish([{ recipientId: post.authorId, type: "like" }]);
     }
   }
 
