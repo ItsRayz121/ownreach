@@ -24,7 +24,7 @@ export const conversationParticipants = pgTable(
     lastReadAt: timestamp("last_read_at", { withTimezone: true }),
   },
   (table) => [
-    primaryKey({ columns: [table.conversationId, table.userId] }),
+    primaryKey({ columns: [table.conversationId, table.userId], name: "conversation_participants_conversation_id_user_id_pk" }),
     index("conversation_participants_user_idx").on(table.userId),
   ]
 );

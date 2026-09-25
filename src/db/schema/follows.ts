@@ -13,7 +13,7 @@ export const follows = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.followerId, table.followingId] }),
+    primaryKey({ columns: [table.followerId, table.followingId], name: "follows_follower_id_following_id_pk" }),
     index("follows_follower_idx").on(table.followerId),
     index("follows_following_idx").on(table.followingId),
   ]

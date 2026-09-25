@@ -31,7 +31,7 @@ export const commentReactions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.commentId, table.userId] })]
+  (table) => [primaryKey({ columns: [table.commentId, table.userId], name: "comment_reactions_comment_id_user_id_pk" })]
 );
 
 export type Comment = typeof comments.$inferSelect;

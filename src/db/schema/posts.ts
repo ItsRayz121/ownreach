@@ -52,7 +52,7 @@ export const postReactions = pgTable(
     type: reactionTypeEnum("type").notNull().default("like"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.postId, table.userId] })]
+  (table) => [primaryKey({ columns: [table.postId, table.userId], name: "post_reactions_post_id_user_id_pk" })]
 );
 
 export const hashtags = pgTable("hashtags", {
