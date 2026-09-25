@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Bell, ShieldCheck } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
