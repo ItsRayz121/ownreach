@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { buildNavItems } from "./nav-items";
 
@@ -13,10 +14,31 @@ interface MobileBottomNavProps {
 
 export function MobileBottomNav({ username, unreadMessages = false, unreadCommunities = false }: MobileBottomNavProps) {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
   const items = buildNavItems(username, { messages: unreadMessages, communities: unreadCommunities });
 
+  // Keep the main content's bottom padding in sync with the nav's real rendered
+  // height (icons + labels + safe-area inset), instead of a hardcoded guess that
+  // drifts across devices/nav-bar configurations.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+
+    const syncHeight = () => {
+      document.documentElement.style.setProperty("--mobile-nav-height", `${nav.offsetHeight}px`);
+    };
+
+    syncHeight();
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <nav className="bg-background/95 pb-safe transform-gpu fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur supports-backdrop-filter:bg-background/80 md:hidden">
+    <nav
+      ref={navRef}
+      className="bg-background pb-safe transform-gpu fixed inset-x-0 bottom-0 z-40 border-t md:hidden"
+    >
       <ul className="flex items-stretch justify-around">
         {items.map((item) => {
           const active = pathname === item.href || (item.href !== "/home" && pathname.startsWith(item.href.split("?")[0]) && item.href !== "/home?compose=1");

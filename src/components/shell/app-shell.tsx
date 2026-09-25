@@ -36,7 +36,7 @@ export function AppShell({
       />
       <div className="flex min-h-dvh w-full flex-1 flex-col md:border-x">
         <MobileTopBar userId={userId} username={username} unreadNotifications={unreadNotifications} isAdmin={isAdmin} />
-        <main className="flex-1 pb-20 md:pb-0">{children}</main>
+        <main className="flex-1 overscroll-y-contain pb-[var(--mobile-nav-height,4.5rem)] md:pb-0">{children}</main>
       </div>
       <MobileBottomNav username={username} unreadMessages={unreadMessages} unreadCommunities={unreadCommunities} />
     </div>
