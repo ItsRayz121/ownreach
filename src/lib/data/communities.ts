@@ -13,6 +13,7 @@ export interface CommunitySummary {
   description: string | null;
   avatarUrl: string | null;
   visibility: "public" | "private";
+  kind: "group" | "channel";
   memberCount: number;
   role: CommunityMember["role"] | null;
   createdAt: Date;
@@ -60,7 +61,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // `%`/`_` are SQL LIKE wildcards, not literal characters — without escaping,
 // searching for e.g. "100% Club" would match every community name instead of
 // filtering, since the `%` is interpreted as "any characters" either side of it.
-function escapeLikePattern(input: string): string {
+export function escapeLikePattern(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
@@ -103,7 +104,7 @@ async function withUnread(rows: { id: string; lastReadAt: Date | null }[], userI
 }
 
 /** A user's communities, sorted by most recently joined. Not cursor-paginated — personal-sized list, like listConversations. */
-export async function listMyCommunities(userId: string): Promise<CommunitySummary[]> {
+export async function listMyCommunities(userId: string, opts: { kind?: "group" | "channel" } = {}): Promise<CommunitySummary[]> {
   const rows = await db
     .select({
       id: communities.id,
@@ -112,6 +113,7 @@ export async function listMyCommunities(userId: string): Promise<CommunitySummar
       description: communities.description,
       avatarUrl: communities.avatarUrl,
       visibility: communities.visibility,
+      kind: communities.kind,
       createdAt: communities.createdAt,
       role: communityMembers.role,
       joinedAt: communityMembers.joinedAt,
@@ -119,7 +121,7 @@ export async function listMyCommunities(userId: string): Promise<CommunitySummar
     })
     .from(communityMembers)
     .innerJoin(communities, eq(communities.id, communityMembers.communityId))
-    .where(eq(communityMembers.userId, userId))
+    .where(and(eq(communityMembers.userId, userId), opts.kind ? eq(communities.kind, opts.kind) : undefined))
     .orderBy(desc(communityMembers.joinedAt));
 
   const [memberCounts, unreadMap] = await Promise.all([withMemberCounts(rows), withUnread(rows, userId)]);
@@ -130,6 +132,7 @@ export async function listMyCommunities(userId: string): Promise<CommunitySummar
     description: r.description,
     avatarUrl: r.avatarUrl,
     visibility: r.visibility,
+    kind: r.kind,
     memberCount: memberCounts.get(r.id) ?? 0,
     role: r.role,
     createdAt: r.createdAt,
@@ -137,8 +140,13 @@ export async function listMyCommunities(userId: string): Promise<CommunitySummar
   }));
 }
 
-export async function hasUnreadCommunities(userId: string): Promise<boolean> {
-  const items = await listMyCommunities(userId);
+export async function hasUnreadGroups(userId: string): Promise<boolean> {
+  const items = await listMyCommunities(userId, { kind: "group" });
+  return items.some((c) => c.unread);
+}
+
+export async function hasUnreadChannels(userId: string): Promise<boolean> {
+  const items = await listMyCommunities(userId, { kind: "channel" });
   return items.some((c) => c.unread);
 }
 
@@ -147,6 +155,7 @@ export async function listDiscoverableCommunities(opts: {
   query?: string;
   viewerId?: string;
   cursor?: string;
+  kind?: "group" | "channel";
 }): Promise<{ items: CommunitySummary[]; nextCursor: string | null }> {
   const decoded = decodeCursor(opts.cursor);
   const cursorFilter = decoded
@@ -164,12 +173,14 @@ export async function listDiscoverableCommunities(opts: {
       description: communities.description,
       avatarUrl: communities.avatarUrl,
       visibility: communities.visibility,
+      kind: communities.kind,
       createdAt: communities.createdAt,
     })
     .from(communities)
     .where(
       and(
         eq(communities.visibility, "public"),
+        opts.kind ? eq(communities.kind, opts.kind) : undefined,
         opts.query ? ilike(communities.name, `%${escapeLikePattern(opts.query)}%`) : undefined,
         cursorFilter
       )
@@ -199,6 +210,7 @@ export async function listDiscoverableCommunities(opts: {
       description: r.description,
       avatarUrl: r.avatarUrl,
       visibility: r.visibility,
+      kind: r.kind,
       memberCount: memberCounts.get(r.id) ?? 0,
       role: roleMap.get(r.id) ?? null,
       createdAt: r.createdAt,
@@ -236,8 +248,15 @@ export async function listChannels(communityId: string): Promise<ChannelSummary[
 
 export async function getChannel(channelId: string) {
   const [row] = await db
-    .select({ id: channels.id, communityId: channels.communityId, name: channels.name, description: channels.description })
+    .select({
+      id: channels.id,
+      communityId: channels.communityId,
+      name: channels.name,
+      description: channels.description,
+      kind: communities.kind,
+    })
     .from(channels)
+    .innerJoin(communities, eq(communities.id, channels.communityId))
     .where(eq(channels.id, channelId))
     .limit(1);
   return row ?? null;

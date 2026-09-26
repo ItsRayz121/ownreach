@@ -1,7 +1,24 @@
 import "server-only";
-import { eq, count } from "drizzle-orm";
+import { and, eq, ilike, ne, or, count } from "drizzle-orm";
 import { db } from "@/db";
 import { profiles, follows, posts, users } from "@/db/schema";
+import { escapeLikePattern } from "./communities";
+
+const SEARCH_PAGE_SIZE = 20;
+
+export async function searchProfiles(query: string, opts: { excludeUserId?: string } = {}) {
+  const pattern = `%${escapeLikePattern(query)}%`;
+  return db
+    .select()
+    .from(profiles)
+    .where(
+      and(
+        or(ilike(profiles.username, pattern), ilike(profiles.displayName, pattern)),
+        opts.excludeUserId ? ne(profiles.userId, opts.excludeUserId) : undefined
+      )
+    )
+    .limit(SEARCH_PAGE_SIZE);
+}
 
 export async function getProfileByUsername(username: string) {
   const [row] = await db

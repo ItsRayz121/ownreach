@@ -5,7 +5,7 @@ import { verifySession } from "@/lib/auth/session";
 import { assertSameOrigin } from "@/lib/auth/http";
 
 const bodySchema = z.object({
-  folder: z.enum(["avatars", "covers", "posts"]),
+  folder: z.enum(["avatars", "covers", "posts", "community-avatars"]),
 });
 
 export async function POST(req: NextRequest) {

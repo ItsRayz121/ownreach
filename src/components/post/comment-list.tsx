@@ -32,6 +32,7 @@ export function CommentList({
               <Link href={`/${comment.author.username}`} className="truncate font-semibold hover:underline">
                 {comment.author.displayName}
               </Link>
+              <span className="text-muted-foreground truncate">@{comment.author.username}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{formatRelativeTime(comment.createdAt)}</span>
               {viewerId === comment.author.userId && <CommentDeleteButton commentId={comment.id} postId={postId} />}

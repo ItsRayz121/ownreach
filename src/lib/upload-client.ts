@@ -4,7 +4,7 @@ export interface UploadResult {
   height: number;
 }
 
-export async function uploadImage(file: File, folder: "avatars" | "covers" | "posts"): Promise<UploadResult> {
+export async function uploadImage(file: File, folder: "avatars" | "covers" | "posts" | "community-avatars"): Promise<UploadResult> {
   const signRes = await fetch("/api/upload/sign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

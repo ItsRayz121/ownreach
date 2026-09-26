@@ -8,12 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/user-avatar";
-import { updateProfile, updateProfileImage } from "@/lib/actions/profile";
+import { updateProfile, updateProfileImage, updateUsername } from "@/lib/actions/profile";
 import { uploadImage } from "@/lib/upload-client";
 import { toast } from "sonner";
 
 interface ProfileEditFormProps {
   profile: {
+    username: string;
     displayName: string;
     bio: string | null;
     location: string | null;
@@ -32,6 +33,21 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
   const [coverUrl, setCoverUrl] = useState(profile.coverUrl);
   const [uploadingKind, setUploadingKind] = useState<"avatar" | "cover" | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const [username, setUsername] = useState(profile.username);
+  const [isSavingUsername, startUsernameSave] = useTransition();
+
+  function handleSaveUsername() {
+    startUsernameSave(async () => {
+      try {
+        const result = await updateUsername({ username });
+        setUsername(result.username);
+        toast.success("Username updated.");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Couldn't update your username.");
+      }
+    });
+  }
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +126,30 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
       </div>
 
       <div className="flex flex-col gap-4">
+        <div>
+          <Label htmlFor="username">Username</Label>
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm">@</span>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                maxLength={20}
+                className="pl-7"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSaveUsername}
+              disabled={isSavingUsername || username === profile.username || !username.trim()}
+            >
+              {isSavingUsername ? "Saving…" : "Save"}
+            </Button>
+          </div>
+          <p className="text-muted-foreground mt-1 text-xs">3-20 lowercase letters, numbers, or underscores. Must be unique.</p>
+        </div>
         <div>
           <Label htmlFor="displayName">Display name</Label>
           <Input id="displayName" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} className="mt-1.5" />

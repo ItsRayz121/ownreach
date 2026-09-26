@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Search as SearchIcon } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
-import { searchPosts, searchProfiles } from "@/lib/data/posts";
+import { searchPosts } from "@/lib/data/posts";
+import { searchProfiles } from "@/lib/data/profiles";
 import { PostCard } from "@/components/post/post-card";
 import { UserAvatar } from "@/components/user-avatar";
 import { Input } from "@/components/ui/input";

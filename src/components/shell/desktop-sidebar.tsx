@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { LogOut, Bell, Bookmark, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { buildNavItems } from "./nav-items";
+import { buildNavItems, isNavItemActive } from "./nav-items";
 import { logout } from "@/lib/actions/auth";
 import { NotificationBell } from "./notification-bell";
 
@@ -15,7 +15,8 @@ interface DesktopSidebarProps {
   displayName?: string;
   unreadNotifications?: number;
   unreadMessages?: boolean;
-  unreadCommunities?: boolean;
+  unreadGroups?: boolean;
+  unreadChannels?: boolean;
   isAdmin?: boolean;
 }
 
@@ -25,11 +26,13 @@ export function DesktopSidebar({
   displayName,
   unreadNotifications = 0,
   unreadMessages = false,
-  unreadCommunities = false,
+  unreadGroups = false,
+  unreadChannels = false,
   isAdmin = false,
 }: DesktopSidebarProps) {
   const pathname = usePathname();
-  const items = buildNavItems(username, { messages: unreadMessages, communities: unreadCommunities });
+  const searchParams = useSearchParams();
+  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels });
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col justify-between border-r px-3 py-6 md:flex">
@@ -39,7 +42,7 @@ export function DesktopSidebar({
         </Link>
         <ul className="flex flex-col gap-1">
           {items.map((item) => {
-            const active = pathname === item.href || (item.href !== "/home" && item.href.split("?")[0] !== "/home" && pathname.startsWith(item.href.split("?")[0]));
+            const active = isNavItemActive(item, pathname, searchParams);
             const Icon = item.icon;
             return (
               <li key={item.label}>

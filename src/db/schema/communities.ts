@@ -3,6 +3,7 @@ import { users } from "./users";
 
 export const communityVisibilityEnum = pgEnum("community_visibility", ["public", "private"]);
 export const communityRoleEnum = pgEnum("community_role", ["owner", "admin", "member"]);
+export const communityKindEnum = pgEnum("community_kind", ["group", "channel"]);
 
 export const communities = pgTable(
   "communities",
@@ -13,6 +14,9 @@ export const communities = pgTable(
     description: text("description"),
     avatarUrl: text("avatar_url"),
     visibility: communityVisibilityEnum("visibility").notNull().default("public"),
+    // "group": any member can post in the channel. "channel": only owner/admins
+    // can post, everyone else is read-only (broadcast mode).
+    kind: communityKindEnum("kind").notNull().default("group"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("communities_visibility_created_idx").on(table.visibility, table.createdAt)]

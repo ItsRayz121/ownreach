@@ -8,7 +8,8 @@ interface AppShellProps {
   displayName?: string;
   unreadNotifications?: number;
   unreadMessages?: boolean;
-  unreadCommunities?: boolean;
+  unreadGroups?: boolean;
+  unreadChannels?: boolean;
   isAdmin?: boolean;
   children: React.ReactNode;
 }
@@ -19,7 +20,8 @@ export function AppShell({
   displayName,
   unreadNotifications = 0,
   unreadMessages = false,
-  unreadCommunities = false,
+  unreadGroups = false,
+  unreadChannels = false,
   isAdmin = false,
   children,
 }: AppShellProps) {
@@ -31,14 +33,20 @@ export function AppShell({
         displayName={displayName}
         unreadNotifications={unreadNotifications}
         unreadMessages={unreadMessages}
-        unreadCommunities={unreadCommunities}
+        unreadGroups={unreadGroups}
+        unreadChannels={unreadChannels}
         isAdmin={isAdmin}
       />
       <div className="flex min-h-dvh w-full flex-1 flex-col md:border-x">
         <MobileTopBar userId={userId} username={username} unreadNotifications={unreadNotifications} isAdmin={isAdmin} />
-        <main className="flex-1 overscroll-y-contain pb-[var(--mobile-nav-height,4.5rem)] md:pb-0">{children}</main>
+        <main className="flex-1 overscroll-y-contain pb-mobile-nav md:pb-0">{children}</main>
       </div>
-      <MobileBottomNav username={username} unreadMessages={unreadMessages} unreadCommunities={unreadCommunities} />
+      <MobileBottomNav
+        username={username}
+        unreadMessages={unreadMessages}
+        unreadGroups={unreadGroups}
+        unreadChannels={unreadChannels}
+      />
     </div>
   );
 }

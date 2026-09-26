@@ -76,7 +76,10 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         {other ? (
           <Link href={`/${other.username}`} className="flex items-center gap-2.5">
             <UserAvatar src={other.avatarUrl} name={other.displayName} className="size-8" />
-            <span className="font-semibold">{other.displayName}</span>
+            <span className="flex flex-col leading-tight">
+              <span className="font-semibold">{other.displayName}</span>
+              <span className="text-muted-foreground text-xs">@{other.username}</span>
+            </span>
           </Link>
         ) : (
           <span className="font-semibold">Unknown user</span>

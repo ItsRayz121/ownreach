@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Hash } from "lucide-react";
+import { Settings } from "lucide-react";
 import { RichText } from "@/components/post/rich-text";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelativeTime } from "@/lib/format";
@@ -14,6 +15,7 @@ import type { ChannelMessageItem } from "@/lib/data/communities";
 
 interface ThreadMember {
   userId: string;
+  username: string;
   displayName: string;
   avatarUrl: string | null;
 }
@@ -21,9 +23,13 @@ interface ThreadMember {
 interface ChannelThreadProps {
   channelId: string;
   communityId: string;
+  communitySlug: string;
   channelName: string;
+  avatarUrl: string | null;
   viewerId: string;
   members: ThreadMember[];
+  canManage: boolean;
+  canPost: boolean;
   initialMessages: ChannelMessageItem[];
   initialNextCursor: string | null;
 }
@@ -31,9 +37,13 @@ interface ChannelThreadProps {
 export function ChannelThread({
   channelId,
   communityId,
+  communitySlug,
   channelName,
+  avatarUrl,
   viewerId,
   members,
+  canManage,
+  canPost,
   initialMessages,
   initialNextCursor,
 }: ChannelThreadProps) {
@@ -76,10 +86,19 @@ export function ChannelThread({
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-dvh">
-      <div className="bg-background/95 sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80">
-        <Hash className="text-muted-foreground size-5 shrink-0" />
+      <div className="bg-background/95 sticky top-0 z-20 flex items-center gap-2.5 border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80">
+        <UserAvatar src={avatarUrl} name={channelName} className="size-8 shrink-0" />
         <span className="min-w-0 flex-1 truncate font-semibold">{channelName}</span>
         <MemberAvatarStack members={members} />
+        {canManage && (
+          <Link
+            href={`/communities/${communitySlug}/settings`}
+            className="text-muted-foreground hover:text-foreground rounded-full p-1.5 hover:bg-accent/60"
+            aria-label="Community settings"
+          >
+            <Settings className="size-4" />
+          </Link>
+        )}
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
@@ -119,7 +138,13 @@ export function ChannelThread({
         <div ref={bottomRef} />
       </div>
 
-      <ChannelComposer channelId={channelId} onSent={appendMessage} />
+      {canPost ? (
+        <ChannelComposer channelId={channelId} onSent={appendMessage} />
+      ) : (
+        <div className="text-muted-foreground border-t px-4 py-3 text-center text-sm">
+          Only admins can post in this channel.
+        </div>
+      )}
     </div>
   );
 }

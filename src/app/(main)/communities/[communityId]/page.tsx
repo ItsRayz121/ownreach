@@ -26,11 +26,11 @@ export default async function CommunityHomePage({ params }: { params: Promise<{ 
     return (
       <EmptyState
         icon={Users}
-        title="No channels yet"
+        title="Setting up…"
         description={
           membership.role === "member"
-            ? "Ask an admin to create the first channel."
-            : "Use “Add channel” in the sidebar to create the first one."
+            ? "This community doesn't have a channel yet — check back soon."
+            : "Refresh the page — your channel should be ready."
         }
       />
     );

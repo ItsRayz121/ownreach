@@ -2,6 +2,7 @@ import { UserAvatar } from "@/components/user-avatar";
 
 interface Member {
   userId: string;
+  username?: string;
   displayName: string;
   avatarUrl: string | null;
 }
@@ -13,7 +14,11 @@ export function MemberAvatarStack({ members, max = 4 }: { members: Member[]; max
   return (
     <div className="flex items-center">
       {shown.map((m, i) => (
-        <span key={m.userId} className={i > 0 ? "-ml-2" : undefined}>
+        <span
+          key={m.userId}
+          className={i > 0 ? "-ml-2" : undefined}
+          title={m.username ? `${m.displayName} (@${m.username})` : m.displayName}
+        >
           <UserAvatar src={m.avatarUrl} name={m.displayName} className="border-background size-6 border-2" />
         </span>
       ))}

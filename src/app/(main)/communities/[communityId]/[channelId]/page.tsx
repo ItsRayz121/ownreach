@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { verifySession } from "@/lib/auth/session";
 import { getCommunityBySlugOrId, getChannel, getMembership, listChannelMessages, listMembers } from "@/lib/data/communities";
+import { isCommunityManager } from "@/lib/community-roles";
 import { ChannelThread } from "@/components/communities/channel-thread";
 
 export async function generateMetadata({ params }: { params: Promise<{ communityId: string; channelId: string }> }) {
@@ -32,13 +33,20 @@ export default async function ChannelPage({
     listChannelMessages(channelId),
   ]);
 
+  const canManage = isCommunityManager(membership.role);
+  const canPost = channel.kind === "channel" ? canManage : true;
+
   return (
     <ChannelThread
       channelId={channelId}
       communityId={community.id}
+      communitySlug={community.slug}
       channelName={channel.name}
+      avatarUrl={community.avatarUrl}
       viewerId={session.userId}
       members={members}
+      canManage={canManage}
+      canPost={canPost}
       initialMessages={items}
       initialNextCursor={nextCursor}
     />

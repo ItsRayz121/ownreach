@@ -82,8 +82,6 @@
   --sidebar-accent-foreground: oklch(0.32 0.12 264);
   --sidebar-border: oklch(0.9 0.006 260);
   --sidebar-ring: oklch(0.53 0.19 264);
-  /* Fallback for first paint, before mobile-bottom-nav.tsx measures its real height. */
-  --mobile-nav-height: 4.5rem;
 }
 
 .dark {
@@ -139,6 +137,15 @@
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* Deterministic, CSS-only nav height (content + safe-area inset) so the
+     nav's own height and the page content's bottom padding can never drift —
+     no client-measured height, no first-paint flash. */
+  .h-mobile-nav {
+    height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .pb-mobile-nav {
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 

@@ -78,7 +78,8 @@ export default async function NotificationsPage({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">
-                    <span className="font-medium">{actorName}</span> {VERBS[n.type]}
+                    <span className="font-medium">{actorName}</span>{" "}
+                    {n.actor && <span className="text-muted-foreground">@{n.actor.username}</span>} {VERBS[n.type]}
                   </p>
                   <p className="text-muted-foreground text-xs">{formatRelativeTime(n.createdAt)}</p>
                 </div>

@@ -233,11 +233,3 @@ export async function searchPosts(query: string, viewerId?: string) {
 
   return hydratePosts(rows, viewerId);
 }
-
-export async function searchProfiles(query: string) {
-  return db
-    .select()
-    .from(profiles)
-    .where(sql`${profiles.username} ILIKE ${"%" + query + "%"} OR ${profiles.displayName} ILIKE ${"%" + query + "%"}`)
-    .limit(PAGE_SIZE);
-}

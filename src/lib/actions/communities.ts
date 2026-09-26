@@ -10,6 +10,7 @@ import { checkRateLimit } from "@/lib/ratelimit";
 import { getMembership, getChannel, listChannelMessages } from "@/lib/data/communities";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { isCommunityManager } from "@/lib/community-roles";
 
 type CommunityRole = "owner" | "admin" | "member";
 
@@ -40,6 +41,8 @@ const createCommunitySchema = z.object({
     .regex(/^[a-z0-9-]{3,30}$/, "Use 3-30 lowercase letters, numbers, or hyphens."),
   description: z.string().trim().max(500, "Keep the description under 500 characters.").optional(),
   visibility: z.enum(["public", "private"]),
+  kind: z.enum(["group", "channel"]).default("group"),
+  avatarUrl: z.string().url().optional(),
 });
 
 export async function createCommunity(input: z.infer<typeof createCommunitySchema>) {
@@ -50,7 +53,7 @@ export async function createCommunity(input: z.infer<typeof createCommunitySchem
   const parsed = createCommunitySchema.parse(input);
 
   try {
-    const community = await db.transaction(async (tx) => {
+    const { community, defaultChannelId } = await db.transaction(async (tx) => {
       const [created] = await tx
         .insert(communities)
         .values({
@@ -58,13 +61,18 @@ export async function createCommunity(input: z.infer<typeof createCommunitySchem
           slug: parsed.slug,
           description: parsed.description,
           visibility: parsed.visibility,
+          kind: parsed.kind,
+          avatarUrl: parsed.avatarUrl,
         })
         .returning();
       await tx.insert(communityMembers).values({ communityId: created.id, userId: session.userId, role: "owner" });
-      return created;
+      // Every group/channel ships with exactly one ready-to-use chat stream —
+      // no separate "add a channel" step for the creator to get stuck on.
+      const [defaultChannel] = await tx.insert(channels).values({ communityId: created.id, name: "general" }).returning();
+      return { community: created, defaultChannelId: defaultChannel.id };
     });
     revalidatePath("/communities");
-    return community;
+    return { ...community, defaultChannelId };
   } catch (err) {
     if (isUniqueViolation(err)) throw new Error("That handle's taken. Try a different one.");
     throw err;
@@ -155,6 +163,9 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   if (!channel) throw new Error("Channel not found.");
   const membership = await getMembership(channel.communityId, session.userId);
   if (!membership) throw new Error("You're not a member of this community.");
+  if (channel.kind === "channel" && !isCommunityManager(membership.role)) {
+    throw new Error("Only admins can post in this channel.");
+  }
 
   const [message] = await db
     .insert(channelMessages)
