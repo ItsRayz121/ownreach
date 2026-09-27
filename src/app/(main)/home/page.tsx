@@ -5,6 +5,7 @@ import { getFeed } from "@/lib/data/posts";
 import { PostCard } from "@/components/post/post-card";
 import { PostComposer } from "@/components/post/post-composer";
 import { EmptyState } from "@/components/empty-state";
+import { canCreatePost } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Home / OwnReach", robots: { index: false } };
@@ -27,7 +28,7 @@ export default async function HomePage({
         <Tab href="/home?tab=following" active={scope === "following"} label="Following" />
       </div>
 
-      {session && (
+      {session && canCreatePost(session) && (
         <PostComposer
           displayName={session.displayName ?? "You"}
           avatarUrl={session.avatarUrl}

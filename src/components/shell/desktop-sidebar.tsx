@@ -8,16 +8,18 @@ import { Button } from "@/components/ui/button";
 import { buildNavItems, isNavItemActive } from "./nav-items";
 import { logout } from "@/lib/actions/auth";
 import { NotificationBell } from "./notification-bell";
+import { NavBadge } from "./nav-badge";
 
 interface DesktopSidebarProps {
   userId?: string;
   username?: string;
   displayName?: string;
   unreadNotifications?: number;
-  unreadMessages?: boolean;
+  unreadMessages?: number;
   unreadGroups?: boolean;
   unreadChannels?: boolean;
   isAdmin?: boolean;
+  canPost?: boolean;
 }
 
 export function DesktopSidebar({
@@ -25,14 +27,15 @@ export function DesktopSidebar({
   username,
   displayName,
   unreadNotifications = 0,
-  unreadMessages = false,
+  unreadMessages = 0,
   unreadGroups = false,
   unreadChannels = false,
   isAdmin = false,
+  canPost = false,
 }: DesktopSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels });
+  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels }, canPost);
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col justify-between border-r px-3 py-6 md:flex">
@@ -55,7 +58,7 @@ export function DesktopSidebar({
                 >
                   <span className="relative">
                     <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
-                    {item.badge && <span className="bg-primary absolute -top-1 -right-1 size-2 rounded-full" />}
+                    <NavBadge badge={item.badge} />
                   </span>
                   {item.label}
                   {item.comingSoon && (

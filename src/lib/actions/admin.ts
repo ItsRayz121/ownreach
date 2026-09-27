@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { users, reports } from "@/db/schema";
+import { users, reports, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 
 async function requireAdmin() {
@@ -21,6 +21,13 @@ export async function suspendUser(userId: string) {
 export async function reinstateUser(userId: string) {
   await requireAdmin();
   await db.update(users).set({ status: "active" }).where(eq(users.id, userId));
+  revalidatePath("/admin/users");
+}
+
+/** Approves or revokes a profile as a high-quality creator — required to post (see lib/permissions.ts). */
+export async function setCreatorStatus(userId: string, isCreator: boolean) {
+  await requireAdmin();
+  await db.update(profiles).set({ isCreator }).where(eq(profiles.userId, userId));
   revalidatePath("/admin/users");
 }
 

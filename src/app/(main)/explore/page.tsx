@@ -15,9 +15,10 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
   const query = q?.trim();
   const session = await verifySession();
 
-  const [profiles, posts] = query
+  const [profileResults, posts] = query
     ? await Promise.all([searchProfiles(query.replace(/^#/, "")), searchPosts(query, session?.userId)])
-    : [[], []];
+    : [{ matches: [], suggestions: [] }, []];
+  const { matches: profiles, suggestions } = profileResults;
 
   return (
     <div>
@@ -42,7 +43,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
         />
       )}
 
-      {query && profiles.length === 0 && posts.length === 0 && (
+      {query && profiles.length === 0 && suggestions.length === 0 && posts.length === 0 && (
         <EmptyState icon={SearchIcon} title="No results" description={`Nothing matched "${query}" yet.`} />
       )}
 
@@ -53,6 +54,27 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
           </h2>
           <ul>
             {profiles.map((profile) => (
+              <li key={profile.userId}>
+                <Link href={`/${profile.username}`} className="hover:bg-accent/30 flex items-center gap-3 px-4 py-3">
+                  <UserAvatar src={profile.avatarUrl} name={profile.displayName} className="size-10" />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{profile.displayName}</p>
+                    <p className="text-muted-foreground truncate text-sm">@{profile.username}</p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="border-b">
+          <h2 className="text-muted-foreground px-4 pt-4 pb-2 text-xs font-semibold tracking-wide uppercase">
+            Did you mean
+          </h2>
+          <ul>
+            {suggestions.map((profile) => (
               <li key={profile.userId}>
                 <Link href={`/${profile.username}`} className="hover:bg-accent/30 flex items-center gap-3 px-4 py-3">
                   <UserAvatar src={profile.avatarUrl} name={profile.displayName} className="size-10" />

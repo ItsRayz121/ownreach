@@ -8,6 +8,7 @@ import { posts, postMedia, postReactions, bookmarks, hashtags, postHashtags, pro
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { insertNotifications, scheduleNotificationPublish } from "@/lib/actions/notify";
+import { canCreatePost } from "@/lib/permissions";
 
 const createPostSchema = z.object({
   body: z.string().trim().min(1, "Say something first.").max(2000, "Posts are capped at 2000 characters."),
@@ -33,6 +34,7 @@ function extractMentions(body: string) {
 export async function createPost(input: z.infer<typeof createPostSchema>) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in to post.");
+  if (!canCreatePost(session)) throw new Error("Only approved creators can post.");
   await checkRateLimit("post:create", session.userId, { limit: 10, window: "10 m" });
 
   const parsed = createPostSchema.parse(input);

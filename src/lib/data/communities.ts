@@ -7,9 +7,11 @@ import {
   channels,
   channelMessages,
   channelMessageViews,
+  channelMessageReactions,
   profiles,
   type CommunityMember,
 } from "@/db/schema";
+import { buildReplyMap, buildReactionMap } from "./reply-reactions";
 
 const DISCOVER_PAGE_SIZE = 30;
 const CHANNEL_MESSAGE_PAGE_SIZE = 50;
@@ -35,6 +37,11 @@ export interface ChannelSummary {
   position: number;
 }
 
+export interface ChannelMessageReactionSummary {
+  emoji: string;
+  userId: string;
+}
+
 export interface ChannelMessageItem {
   id: string;
   body: string;
@@ -42,6 +49,10 @@ export interface ChannelMessageItem {
   senderId: string;
   /** Unique viewers, channels only — see channelMessageViews for why groups don't get one. */
   viewCount: number;
+  replyToMessageId: string | null;
+  replyExcerpt: string | null;
+  replyTo: { id: string; body: string; senderId: string } | null;
+  reactions: ChannelMessageReactionSummary[];
 }
 
 interface CursorParts {
@@ -272,6 +283,25 @@ export async function getChannel(channelId: string) {
   return row ?? null;
 }
 
+/** Scoped to `channelId` so a caller can't resolve/leak a reply pointing at a message in a different channel. */
+function attachChannelReplyPreviews(channelId: string, rows: { id: string; body: string; senderId: string; replyToMessageId: string | null }[]) {
+  return buildReplyMap(rows, (ids) =>
+    db
+      .select({ id: channelMessages.id, body: channelMessages.body, senderId: channelMessages.senderId })
+      .from(channelMessages)
+      .where(and(inArray(channelMessages.id, ids), eq(channelMessages.channelId, channelId)))
+  );
+}
+
+function attachChannelReactions(messageIds: string[]) {
+  return buildReactionMap(messageIds, (ids) =>
+    db
+      .select({ messageId: channelMessageReactions.messageId, emoji: channelMessageReactions.emoji, userId: channelMessageReactions.userId })
+      .from(channelMessageReactions)
+      .where(inArray(channelMessageReactions.messageId, ids))
+  );
+}
+
 /**
  * Returns messages in ascending (oldest-first) order; `cursor` pages backward
  * for older history. `kind` gates the view-count join — groups are
@@ -294,7 +324,14 @@ export async function listChannelMessages(
 
   if (kind !== "channel") {
     const rows = await db
-      .select({ id: channelMessages.id, body: channelMessages.body, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId })
+      .select({
+        id: channelMessages.id,
+        body: channelMessages.body,
+        createdAt: channelMessages.createdAt,
+        senderId: channelMessages.senderId,
+        replyToMessageId: channelMessages.replyToMessageId,
+        replyExcerpt: channelMessages.replyExcerpt,
+      })
       .from(channelMessages)
       .where(and(eq(channelMessages.channelId, channelId), cursorFilter))
       .orderBy(desc(channelMessages.createdAt), desc(channelMessages.id))
@@ -302,7 +339,20 @@ export async function listChannelMessages(
 
     const last = rows.at(-1);
     const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
-    return { items: rows.reverse().map((r) => ({ ...r, viewCount: 0 })), nextCursor };
+    const ordered = rows.reverse();
+    const [replyMap, reactionMap] = await Promise.all([
+      attachChannelReplyPreviews(channelId, ordered),
+      attachChannelReactions(ordered.map((m) => m.id)),
+    ]);
+    return {
+      items: ordered.map((r) => ({
+        ...r,
+        viewCount: 0,
+        replyTo: r.replyToMessageId ? (replyMap.get(r.replyToMessageId) ?? null) : null,
+        reactions: reactionMap.get(r.id) ?? [],
+      })),
+      nextCursor,
+    };
   }
 
   const rows = await db
@@ -311,6 +361,8 @@ export async function listChannelMessages(
       body: channelMessages.body,
       createdAt: channelMessages.createdAt,
       senderId: channelMessages.senderId,
+      replyToMessageId: channelMessages.replyToMessageId,
+      replyExcerpt: channelMessages.replyExcerpt,
       viewCount: countDistinct(channelMessageViews.userId),
     })
     .from(channelMessages)
@@ -322,7 +374,19 @@ export async function listChannelMessages(
 
   const last = rows.at(-1);
   const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
-  return { items: rows.reverse(), nextCursor };
+  const ordered = rows.reverse();
+  const [replyMap, reactionMap] = await Promise.all([
+    attachChannelReplyPreviews(channelId, ordered),
+    attachChannelReactions(ordered.map((m) => m.id)),
+  ]);
+  return {
+    items: ordered.map((r) => ({
+      ...r,
+      replyTo: r.replyToMessageId ? (replyMap.get(r.replyToMessageId) ?? null) : null,
+      reactions: reactionMap.get(r.id) ?? [],
+    })),
+    nextCursor,
+  };
 }
 
 /**

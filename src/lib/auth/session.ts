@@ -59,9 +59,11 @@ export const verifySession = cache(async () => {
       userId: users.id,
       role: users.role,
       status: users.status,
+      email: users.email,
       username: profiles.username,
       displayName: profiles.displayName,
       avatarUrl: profiles.avatarUrl,
+      isCreator: profiles.isCreator,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))

@@ -8,6 +8,7 @@ import { sendMessage } from "@/lib/actions/messages";
 import { useSelectionFormatting } from "@/lib/hooks/use-selection-formatting";
 import { useMagicPencilPaste } from "@/lib/hooks/use-magic-pencil-paste";
 import { SelectionToolbar } from "@/components/post/selection-toolbar";
+import { ComposerReplyBanner, type ComposerReplyTarget } from "@/components/messages/composer-reply-banner";
 import type { MessageItem } from "@/lib/data/messages";
 import { toast } from "sonner";
 
@@ -15,10 +16,25 @@ const MAX_LENGTH = 2000;
 
 interface MessageComposerProps {
   conversationId: string;
-  onSent: (message: MessageItem) => void;
+  onSent: (message: MessageItem, tempId?: string) => void;
+  onOptimisticSend?: (tempId: string, body: string, replyTarget: ComposerReplyTarget | null) => void;
+  onSendError?: (tempId: string) => void;
+  disabled?: boolean;
+  disabledReason?: string;
+  replyTarget?: ComposerReplyTarget | null;
+  onCancelReply?: () => void;
 }
 
-export function MessageComposer({ conversationId, onSent }: MessageComposerProps) {
+export function MessageComposer({
+  conversationId,
+  onSent,
+  onOptimisticSend,
+  onSendError,
+  disabled,
+  disabledReason,
+  replyTarget,
+  onCancelReply,
+}: MessageComposerProps) {
   const [body, setBody] = useState("");
   const [isPending, startTransition] = useTransition();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -29,55 +45,75 @@ export function MessageComposer({ conversationId, onSent }: MessageComposerProps
   function handleSubmit() {
     const trimmed = body.trim();
     if (!trimmed) return;
+    const tempId = crypto.randomUUID();
+    const target = replyTarget ?? null;
+    onOptimisticSend?.(tempId, trimmed, target);
     startTransition(async () => {
       try {
-        const message = await sendMessage({ conversationId, body: trimmed });
+        const message = await sendMessage({
+          conversationId,
+          body: trimmed,
+          replyToMessageId: target?.messageId,
+          replyExcerpt: target?.excerpt,
+        });
+        // Only clear the draft once the send is confirmed — on failure
+        // (rate limit, request-cap, network blip) the typed text and reply
+        // target stay put so the user can retry without retyping.
         setBody("");
-        onSent(message);
+        onCancelReply?.();
+        onSent(message, tempId);
       } catch (error) {
+        onSendError?.(tempId);
         toast.error(error instanceof Error ? error.message : "Couldn't send your message.");
       }
     });
   }
 
+  if (disabled) {
+    return <div className="text-muted-foreground border-t px-4 py-3 text-center text-sm">{disabledReason}</div>;
+  }
+
   return (
-    <div className="flex items-end gap-2 border-t px-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <Textarea
-          ref={textareaRef}
-          value={body}
-          onChange={(e) => {
-            magicPencil.notifyEdited();
-            setBody(e.target.value.slice(0, MAX_LENGTH));
-          }}
-          onPaste={magicPencil.handlePaste}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSubmit();
-            }
-          }}
-          placeholder="Message…"
-          rows={1}
-          className="min-h-9 resize-none border-none px-0 shadow-none focus-visible:ring-0"
-        />
-        <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
-      </div>
-      {magicPencil.active && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={magicPencil.apply}
-          aria-label="Magic pencil — restore original formatting"
-          title="Magic pencil — restore original formatting"
-        >
-          <Sparkles className="size-4" />
+    <div className="border-t">
+      {replyTarget && onCancelReply && <ComposerReplyBanner target={replyTarget} onCancel={onCancelReply} />}
+      <div className="flex items-end gap-2 px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <Textarea
+            ref={textareaRef}
+            value={body}
+            onChange={(e) => {
+              magicPencil.notifyEdited();
+              setBody(e.target.value.slice(0, MAX_LENGTH));
+            }}
+            onPaste={magicPencil.handlePaste}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            placeholder="Message…"
+            rows={1}
+            className="min-h-9 resize-none border-none px-0 shadow-none focus-visible:ring-0"
+          />
+          <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
+        </div>
+        {magicPencil.active && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={magicPencil.apply}
+            aria-label="Magic pencil — restore original formatting"
+            title="Magic pencil — restore original formatting"
+          >
+            <Sparkles className="size-4" />
+          </Button>
+        )}
+        <Button size="icon" onClick={handleSubmit} disabled={isPending || !body.trim()} aria-label="Send">
+          <Send className="size-4" />
         </Button>
-      )}
-      <Button size="icon" onClick={handleSubmit} disabled={isPending || !body.trim()} aria-label="Send">
-        <Send className="size-4" />
-      </Button>
+      </div>
     </div>
   );
 }

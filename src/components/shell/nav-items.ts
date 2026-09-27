@@ -6,20 +6,20 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   comingSoon?: boolean;
-  badge?: boolean;
+  badge?: boolean | number;
 }
 
 export interface NavUnread {
-  messages?: boolean;
+  messages?: number;
   groups?: boolean;
   channels?: boolean;
 }
 
-export function buildNavItems(username?: string, unread: NavUnread = {}): NavItem[] {
+export function buildNavItems(username?: string, unread: NavUnread = {}, canPost = false): NavItem[] {
   return [
     ...(username ? [{ label: "Chats", href: "/messages", icon: MessageCircle, badge: unread.messages }] : []),
     ...(username ? [{ label: "Groups", href: "/communities?kind=group", icon: Users, badge: unread.groups }] : []),
-    { label: "Create", href: "/home?compose=1", icon: PlusSquare },
+    ...(canPost ? [{ label: "Create", href: "/home?compose=1", icon: PlusSquare }] : []),
     ...(username ? [{ label: "Channels", href: "/communities?kind=channel", icon: Radio, badge: unread.channels }] : []),
     { label: "Profile", href: username ? `/${username}` : "/login", icon: User },
   ];

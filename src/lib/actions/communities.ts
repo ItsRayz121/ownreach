@@ -4,13 +4,15 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { communities, communityMembers, channels, channelMessages } from "@/db/schema";
+import { communities, communityMembers, channels, channelMessages, channelMessageReactions } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getMembership, getChannel, listChannelMessages, recordChannelMessageViews } from "@/lib/data/communities";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isCommunityManager } from "@/lib/community-roles";
+import { isMessageReactionEmoji } from "@/lib/reactions";
+import { toggleReactionCore } from "@/lib/actions/reaction-toggle";
 
 type CommunityRole = "owner" | "admin" | "member";
 
@@ -130,6 +132,8 @@ export async function deleteCommunity(communityId: string) {
 const sendChannelMessageSchema = z.object({
   channelId: z.string().uuid(),
   body: z.string().trim().min(1, "Write something first.").max(2000, "Messages are capped at 2000 characters."),
+  replyToMessageId: z.string().uuid().optional(),
+  replyExcerpt: z.string().trim().max(500).optional(),
 });
 
 export async function sendChannelMessage(input: z.infer<typeof sendChannelMessageSchema>) {
@@ -146,20 +150,95 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
     throw new Error("Only admins can post in this channel.");
   }
 
+  // Scoped to this channel so a caller can't quote/leak a message id from a
+  // different channel/community they happen to also be a member of.
+  let replyTo: { id: string; body: string; senderId: string } | null = null;
+  if (parsed.replyToMessageId) {
+    const [original] = await db
+      .select({ id: channelMessages.id, body: channelMessages.body, senderId: channelMessages.senderId })
+      .from(channelMessages)
+      .where(and(eq(channelMessages.id, parsed.replyToMessageId), eq(channelMessages.channelId, parsed.channelId)))
+      .limit(1);
+    if (!original) throw new Error("The message you're replying to could not be found.");
+    replyTo = original;
+  }
+
   const [message] = await db
     .insert(channelMessages)
-    .values({ channelId: parsed.channelId, senderId: session.userId, body: parsed.body })
-    .returning({ id: channelMessages.id, body: channelMessages.body, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId });
+    .values({
+      channelId: parsed.channelId,
+      senderId: session.userId,
+      body: parsed.body,
+      replyToMessageId: replyTo?.id,
+      replyExcerpt: parsed.replyExcerpt,
+    })
+    .returning({
+      id: channelMessages.id,
+      body: channelMessages.body,
+      createdAt: channelMessages.createdAt,
+      senderId: channelMessages.senderId,
+      replyToMessageId: channelMessages.replyToMessageId,
+      replyExcerpt: channelMessages.replyExcerpt,
+    });
 
   await publishToChannel(`channel:${parsed.channelId}`, "message", {
     id: message.id,
     body: message.body,
     senderId: message.senderId,
     createdAt: message.createdAt.toISOString(),
+    replyToMessageId: message.replyToMessageId,
+    replyExcerpt: message.replyExcerpt,
   });
 
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
-  return { ...message, viewCount: 0 };
+  return { ...message, viewCount: 0, replyTo, reactions: [] };
+}
+
+export async function toggleChannelMessageReaction(messageId: string, emoji: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in to react.");
+  if (!isMessageReactionEmoji(emoji)) throw new Error("Unsupported reaction.");
+
+  const [message] = await db
+    .select({ channelId: channelMessages.channelId })
+    .from(channelMessages)
+    .where(eq(channelMessages.id, messageId))
+    .limit(1);
+  if (!message) throw new Error("Message not found.");
+
+  // Independent of the channel/membership check below, so fire it now and
+  // await the result only once it's actually needed.
+  const existingReactionPromise = db
+    .select()
+    .from(channelMessageReactions)
+    .where(and(eq(channelMessageReactions.messageId, messageId), eq(channelMessageReactions.userId, session.userId)))
+    .limit(1);
+
+  const channel = await getChannel(message.channelId);
+  if (!channel) throw new Error("Message not found.");
+  const membership = await getMembership(channel.communityId, session.userId);
+  if (!membership) throw new Error("You're not a member of this community.");
+
+  const action = await toggleReactionCore({
+    emoji,
+    findExisting: async () => (await existingReactionPromise)[0],
+    remove: () =>
+      db.delete(channelMessageReactions).where(and(eq(channelMessageReactions.messageId, messageId), eq(channelMessageReactions.userId, session.userId))),
+    upsert: () =>
+      db
+        .insert(channelMessageReactions)
+        .values({ messageId, userId: session.userId, emoji })
+        .onConflictDoUpdate({ target: [channelMessageReactions.messageId, channelMessageReactions.userId], set: { emoji } }),
+  });
+
+  await publishToChannel(`channel:${message.channelId}`, "reaction", {
+    messageId,
+    userId: session.userId,
+    emoji,
+    action,
+  });
+
+  return { action, emoji };
 }
 
 export async function loadOlderChannelMessages(channelId: string, cursor: string) {

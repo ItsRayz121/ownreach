@@ -4,23 +4,26 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { buildNavItems, isNavItemActive } from "./nav-items";
+import { NavBadge } from "./nav-badge";
 
 interface MobileBottomNavProps {
   username?: string;
-  unreadMessages?: boolean;
+  unreadMessages?: number;
   unreadGroups?: boolean;
   unreadChannels?: boolean;
+  canPost?: boolean;
 }
 
 export function MobileBottomNav({
   username,
-  unreadMessages = false,
+  unreadMessages = 0,
   unreadGroups = false,
   unreadChannels = false,
+  canPost = false,
 }: MobileBottomNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels });
+  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels }, canPost);
 
   return (
     <nav className="bg-background h-mobile-nav transform-gpu fixed inset-x-0 bottom-0 z-40 border-t md:hidden">
@@ -40,7 +43,7 @@ export function MobileBottomNav({
               >
                 <span className="relative">
                   <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
-                  {item.badge && <span className="bg-primary absolute -top-0.5 -right-1 size-2 rounded-full" />}
+                  <NavBadge badge={item.badge} />
                 </span>
                 {item.label}
               </Link>

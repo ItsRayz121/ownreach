@@ -1,4 +1,4 @@
-import { index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
 export const communityVisibilityEnum = pgEnum("community_visibility", ["public", "private"]);
@@ -74,9 +74,37 @@ export const channelMessages = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    // Nullable, self-referencing "reply to" — see messages.replyToMessageId.
+    replyToMessageId: uuid("reply_to_message_id"),
+    replyExcerpt: text("reply_excerpt"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("channel_messages_channel_created_idx").on(table.channelId, table.createdAt)]
+  (table) => [
+    index("channel_messages_channel_created_idx").on(table.channelId, table.createdAt),
+    foreignKey({
+      columns: [table.replyToMessageId],
+      foreignColumns: [table.id],
+      name: "channel_messages_reply_to_message_id_fk",
+    }).onDelete("set null"),
+  ]
+);
+
+export const channelMessageReactions = pgTable(
+  "channel_message_reactions",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => channelMessages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.userId], name: "channel_message_reactions_message_id_user_id_pk" }),
+    index("channel_message_reactions_message_idx").on(table.messageId),
+  ]
 );
 
 // One row per (message, viewer) — the composite PK is what makes a repeat
@@ -107,3 +135,4 @@ export type Channel = typeof channels.$inferSelect;
 export type NewChannel = typeof channels.$inferInsert;
 export type ChannelMessage = typeof channelMessages.$inferSelect;
 export type ChannelMessageView = typeof channelMessageViews.$inferSelect;
+export type ChannelMessageReaction = typeof channelMessageReactions.$inferSelect;

@@ -85,6 +85,7 @@ export interface AdminUserRow {
   displayName: string;
   role: "user" | "creator" | "admin";
   status: "active" | "suspended";
+  isCreator: boolean;
   createdAt: Date;
 }
 
@@ -98,6 +99,7 @@ export async function listUsers(query?: string): Promise<AdminUserRow[]> {
       displayName: profiles.displayName,
       role: users.role,
       status: users.status,
+      isCreator: profiles.isCreator,
       createdAt: users.createdAt,
     })
     .from(users)

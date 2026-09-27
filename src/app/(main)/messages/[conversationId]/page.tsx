@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { verifySession } from "@/lib/auth/session";
-import { getOtherParticipant, isParticipant, listMessages } from "@/lib/data/messages";
+import { getOtherParticipant, getConversationMeta, isParticipant, listMessages } from "@/lib/data/messages";
 import { MessageThread } from "@/components/messages/message-thread";
 
 export async function generateMetadata({ params }: { params: Promise<{ conversationId: string }> }) {
@@ -19,9 +19,10 @@ export default async function ConversationPage({ params }: { params: Promise<{ c
   const participant = await isParticipant(conversationId, session.userId);
   if (!participant) notFound();
 
-  const [other, { items, nextCursor }] = await Promise.all([
+  const [other, { items, nextCursor }, meta] = await Promise.all([
     getOtherParticipant(conversationId, session.userId),
     listMessages(conversationId),
+    getConversationMeta(conversationId),
   ]);
 
   return (
@@ -31,6 +32,8 @@ export default async function ConversationPage({ params }: { params: Promise<{ c
       other={other}
       initialMessages={items}
       initialNextCursor={nextCursor}
+      status={meta?.status ?? "accepted"}
+      initiatorId={meta?.initiatorId ?? null}
     />
   );
 }

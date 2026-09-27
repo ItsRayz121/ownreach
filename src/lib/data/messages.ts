@@ -2,7 +2,8 @@ import "server-only";
 import { alias } from "drizzle-orm/pg-core";
 import { and, desc, eq, inArray, lt, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { conversationParticipants, messages, profiles } from "@/db/schema";
+import { conversations, conversationParticipants, messages, messageReactions, profiles } from "@/db/schema";
+import { buildReplyMap, buildReactionMap } from "./reply-reactions";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -11,6 +12,13 @@ export interface ConversationSummary {
   other: { userId: string; username: string; displayName: string; avatarUrl: string | null } | null;
   lastMessage: { body: string; createdAt: Date; senderId: string } | null;
   unread: boolean;
+  status: "accepted" | "pending" | "declined";
+  initiatorId: string | null;
+}
+
+export interface MessageReactionSummary {
+  emoji: string;
+  userId: string;
 }
 
 export interface MessageItem {
@@ -18,6 +26,11 @@ export interface MessageItem {
   body: string;
   createdAt: Date;
   senderId: string;
+  deliveredAt: Date | null;
+  replyToMessageId: string | null;
+  replyExcerpt: string | null;
+  replyTo: { id: string; body: string; senderId: string } | null;
+  reactions: MessageReactionSummary[];
 }
 
 interface CursorParts {
@@ -66,6 +79,15 @@ export async function isParticipant(conversationId: string, userId: string): Pro
   return Boolean(row);
 }
 
+export async function getConversationMeta(conversationId: string) {
+  const [row] = await db
+    .select({ id: conversations.id, status: conversations.status, initiatorId: conversations.initiatorId })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getOtherParticipant(conversationId: string, viewerId: string) {
   const [other] = await db
     .select({
@@ -73,6 +95,7 @@ export async function getOtherParticipant(conversationId: string, viewerId: stri
       username: profiles.username,
       displayName: profiles.displayName,
       avatarUrl: profiles.avatarUrl,
+      lastReadAt: conversationParticipants.lastReadAt,
     })
     .from(conversationParticipants)
     .innerJoin(profiles, eq(profiles.userId, conversationParticipants.userId))
@@ -83,7 +106,9 @@ export async function getOtherParticipant(conversationId: string, viewerId: stri
 
 /**
  * A user's DM inbox, sorted by most recent activity. Not cursor-paginated —
- * scoped for a personal-inbox-sized list, not an at-scale feed.
+ * scoped for a personal-inbox-sized list, not an at-scale feed. Excludes
+ * conversations the viewer declined as a message request (the initiator
+ * still sees their own copy, see conversationId lookups in actions).
  */
 export async function listConversations(userId: string): Promise<ConversationSummary[]> {
   const myRows = await db
@@ -95,7 +120,7 @@ export async function listConversations(userId: string): Promise<ConversationSum
   const conversationIds = myRows.map((r) => r.conversationId);
   const lastReadMap = new Map(myRows.map((r) => [r.conversationId, r.lastReadAt]));
 
-  const [latest, otherParticipants] = await Promise.all([
+  const [latest, otherParticipants, conversationRows] = await Promise.all([
     db
       .selectDistinctOn([messages.conversationId], {
         conversationId: messages.conversationId,
@@ -110,10 +135,15 @@ export async function listConversations(userId: string): Promise<ConversationSum
       .select({ conversationId: conversationParticipants.conversationId, userId: conversationParticipants.userId })
       .from(conversationParticipants)
       .where(and(inArray(conversationParticipants.conversationId, conversationIds), ne(conversationParticipants.userId, userId))),
+    db
+      .select({ id: conversations.id, status: conversations.status, initiatorId: conversations.initiatorId })
+      .from(conversations)
+      .where(inArray(conversations.id, conversationIds)),
   ]);
 
   const latestMap = new Map(latest.map((m) => [m.conversationId, m]));
   const otherByConversation = new Map(otherParticipants.map((p) => [p.conversationId, p.userId]));
+  const metaMap = new Map(conversationRows.map((c) => [c.id, c]));
 
   const otherUserIds = [...new Set(otherParticipants.map((p) => p.userId))];
   const otherProfiles = otherUserIds.length
@@ -129,25 +159,80 @@ export async function listConversations(userId: string): Promise<ConversationSum
     : [];
   const profileMap = new Map(otherProfiles.map((p) => [p.userId, p]));
 
-  const items: ConversationSummary[] = conversationIds.map((id) => {
-    const lastMessage = latestMap.get(id);
-    const otherUserId = otherByConversation.get(id);
-    const lastReadAt = lastReadMap.get(id);
-    return {
-      id,
-      other: otherUserId ? (profileMap.get(otherUserId) ?? null) : null,
-      lastMessage: lastMessage ? { body: lastMessage.body, createdAt: lastMessage.createdAt, senderId: lastMessage.senderId } : null,
-      unread: Boolean(lastMessage && lastMessage.senderId !== userId && (!lastReadAt || lastMessage.createdAt > lastReadAt)),
-    };
-  });
+  const items: ConversationSummary[] = conversationIds
+    .map((id) => {
+      const lastMessage = latestMap.get(id);
+      const otherUserId = otherByConversation.get(id);
+      const lastReadAt = lastReadMap.get(id);
+      const meta = metaMap.get(id);
+      return {
+        id,
+        other: otherUserId ? (profileMap.get(otherUserId) ?? null) : null,
+        lastMessage: lastMessage ? { body: lastMessage.body, createdAt: lastMessage.createdAt, senderId: lastMessage.senderId } : null,
+        unread: Boolean(lastMessage && lastMessage.senderId !== userId && (!lastReadAt || lastMessage.createdAt > lastReadAt)),
+        status: meta?.status ?? "accepted",
+        initiatorId: meta?.initiatorId ?? null,
+      };
+    })
+    .filter((c) => !(c.status === "declined" && c.initiatorId !== userId));
 
   items.sort((a, b) => (b.lastMessage?.createdAt.getTime() ?? 0) - (a.lastMessage?.createdAt.getTime() ?? 0));
   return items;
 }
 
-export async function hasUnreadMessages(userId: string): Promise<boolean> {
-  const items = await listConversations(userId);
-  return items.some((c) => c.unread);
+/** Lighter-weight than listConversations — skips the profile/other-participant joins, since only the count is needed. */
+export async function countUnreadConversations(userId: string): Promise<number> {
+  const myRows = await db
+    .select({ conversationId: conversationParticipants.conversationId, lastReadAt: conversationParticipants.lastReadAt })
+    .from(conversationParticipants)
+    .where(eq(conversationParticipants.userId, userId));
+  if (myRows.length === 0) return 0;
+
+  const conversationIds = myRows.map((r) => r.conversationId);
+  const lastReadMap = new Map(myRows.map((r) => [r.conversationId, r.lastReadAt]));
+
+  const [latest, conversationRows] = await Promise.all([
+    db
+      .selectDistinctOn([messages.conversationId], {
+        conversationId: messages.conversationId,
+        senderId: messages.senderId,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .where(inArray(messages.conversationId, conversationIds))
+      .orderBy(messages.conversationId, desc(messages.createdAt)),
+    db
+      .select({ id: conversations.id, status: conversations.status, initiatorId: conversations.initiatorId })
+      .from(conversations)
+      .where(inArray(conversations.id, conversationIds)),
+  ]);
+  const metaMap = new Map(conversationRows.map((c) => [c.id, c]));
+
+  return latest.filter((m) => {
+    const meta = metaMap.get(m.conversationId);
+    if (meta?.status === "declined" && meta.initiatorId !== userId) return false;
+    const lastReadAt = lastReadMap.get(m.conversationId);
+    return m.senderId !== userId && (!lastReadAt || m.createdAt > lastReadAt);
+  }).length;
+}
+
+/** Scoped to `conversationId` so a caller can't resolve/leak a reply pointing at a message in a different conversation. */
+function attachReplyPreviews(conversationId: string, rows: { id: string; body: string; senderId: string; replyToMessageId: string | null }[]) {
+  return buildReplyMap(rows, (ids) =>
+    db
+      .select({ id: messages.id, body: messages.body, senderId: messages.senderId })
+      .from(messages)
+      .where(and(inArray(messages.id, ids), eq(messages.conversationId, conversationId)))
+  );
+}
+
+function attachReactions(messageIds: string[]) {
+  return buildReactionMap(messageIds, (ids) =>
+    db
+      .select({ messageId: messageReactions.messageId, emoji: messageReactions.emoji, userId: messageReactions.userId })
+      .from(messageReactions)
+      .where(inArray(messageReactions.messageId, ids))
+  );
 }
 
 /** Returns messages in ascending (oldest-first) order; `cursor` pages backward for older history. */
@@ -161,7 +246,15 @@ export async function listMessages(conversationId: string, cursor?: string) {
     : undefined;
 
   const rows = await db
-    .select({ id: messages.id, body: messages.body, createdAt: messages.createdAt, senderId: messages.senderId })
+    .select({
+      id: messages.id,
+      body: messages.body,
+      createdAt: messages.createdAt,
+      senderId: messages.senderId,
+      deliveredAt: messages.deliveredAt,
+      replyToMessageId: messages.replyToMessageId,
+      replyExcerpt: messages.replyExcerpt,
+    })
     .from(messages)
     .where(and(eq(messages.conversationId, conversationId), cursorFilter))
     .orderBy(desc(messages.createdAt), desc(messages.id))
@@ -169,5 +262,18 @@ export async function listMessages(conversationId: string, cursor?: string) {
 
   const last = rows.at(-1);
   const nextCursor = rows.length === MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
-  return { items: rows.reverse() as MessageItem[], nextCursor };
+  const ordered = rows.reverse();
+
+  const [replyMap, reactionMap] = await Promise.all([
+    attachReplyPreviews(conversationId, ordered),
+    attachReactions(ordered.map((m) => m.id)),
+  ]);
+
+  const items: MessageItem[] = ordered.map((m) => ({
+    ...m,
+    replyTo: m.replyToMessageId ? (replyMap.get(m.replyToMessageId) ?? null) : null,
+    reactions: reactionMap.get(m.id) ?? [],
+  }));
+
+  return { items, nextCursor };
 }

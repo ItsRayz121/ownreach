@@ -2,6 +2,7 @@ import { Search as SearchIcon } from "lucide-react";
 import { listUsers } from "@/lib/data/admin";
 import { Input } from "@/components/ui/input";
 import { UserStatusToggle } from "@/components/admin/user-status-toggle";
+import { CreatorStatusToggle } from "@/components/admin/creator-status-toggle";
 import { formatRelativeTime } from "@/lib/format";
 
 export default async function AdminUsersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
@@ -26,6 +27,9 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
               {user.role !== "user" && (
                 <span className="text-muted-foreground text-[10px] tracking-wide uppercase">{user.role}</span>
               )}
+              {user.isCreator && (
+                <span className="text-primary text-[10px] font-medium tracking-wide uppercase">Approved poster</span>
+              )}
               {user.status === "suspended" && (
                 <span className="text-destructive text-[10px] font-medium tracking-wide uppercase">Suspended</span>
               )}
@@ -34,7 +38,10 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
               @{user.username} · joined {formatRelativeTime(user.createdAt)}
             </p>
           </div>
-          {user.role !== "admin" && <UserStatusToggle userId={user.id} status={user.status} />}
+          <div className="flex shrink-0 gap-2">
+            {user.role !== "admin" && <CreatorStatusToggle userId={user.id} isCreator={user.isCreator} />}
+            {user.role !== "admin" && <UserStatusToggle userId={user.id} status={user.status} />}
+          </div>
         </div>
       ))}
     </div>

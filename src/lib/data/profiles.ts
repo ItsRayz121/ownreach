@@ -1,14 +1,23 @@
 import "server-only";
-import { and, asc, eq, ilike, ne, or, count } from "drizzle-orm";
+import { and, asc, eq, ilike, ne, notInArray, or, count } from "drizzle-orm";
 import { db } from "@/db";
 import { profiles, profileSocialLinks, follows, posts, users } from "@/db/schema";
 import { escapeLikePattern } from "./communities";
+import { rankBySimilarity } from "@/lib/text-similarity";
 
 const SEARCH_PAGE_SIZE = 20;
+const SUGGESTION_CANDIDATE_LIMIT = 300;
+const SUGGESTION_COUNT = 5;
 
-export async function searchProfiles(query: string, opts: { excludeUserId?: string } = {}) {
+export interface ProfileSearchResult {
+  matches: (typeof profiles.$inferSelect)[];
+  /** "Did you mean" fallback, ranked by edit-distance similarity — populated only when `matches` is thin. */
+  suggestions: (typeof profiles.$inferSelect)[];
+}
+
+export async function searchProfiles(query: string, opts: { excludeUserId?: string } = {}): Promise<ProfileSearchResult> {
   const pattern = `%${escapeLikePattern(query)}%`;
-  return db
+  const matches = await db
     .select()
     .from(profiles)
     .where(
@@ -18,6 +27,32 @@ export async function searchProfiles(query: string, opts: { excludeUserId?: stri
       )
     )
     .limit(SEARCH_PAGE_SIZE);
+
+  if (matches.length >= SEARCH_PAGE_SIZE || query.trim().length === 0) {
+    return { matches, suggestions: [] };
+  }
+
+  // Broader candidate pool for a "Did you mean" fallback, ranked by
+  // edit-distance similarity in JS rather than a DB extension (e.g.
+  // pg_trgm) — keeps this portable across Postgres hosts. Deliberately not
+  // prefix-filtered: a typo in the first character(s) — the most common kind
+  // — would otherwise exclude the very candidate we're trying to suggest.
+  // Bounded to SUGGESTION_CANDIDATE_LIMIT rows, acceptable at this app's
+  // current scale (see the "personal-inbox-sized" note on listConversations).
+  const excludeIds = matches.map((m) => m.userId);
+  const candidates = await db
+    .select()
+    .from(profiles)
+    .where(
+      and(
+        excludeIds.length ? notInArray(profiles.userId, excludeIds) : undefined,
+        opts.excludeUserId ? ne(profiles.userId, opts.excludeUserId) : undefined
+      )
+    )
+    .limit(SUGGESTION_CANDIDATE_LIMIT);
+
+  const ranked = rankBySimilarity(query, candidates, (p) => p.username).slice(0, SUGGESTION_COUNT);
+  return { matches, suggestions: ranked };
 }
 
 export async function getProfileByUsername(username: string) {

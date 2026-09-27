@@ -6,6 +6,7 @@ import { unstable_rethrow } from "next/navigation";
 import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/auth/password-input";
 import { loginWithPassword, signupWithPassword } from "@/lib/actions/auth";
 
 type Mode = "login" | "signup";
@@ -68,8 +69,7 @@ export function PasswordAuthForm() {
         disabled={status === "submitting"}
         autoFocus
       />
-      <Input
-        type="password"
+      <PasswordInput
         required
         minLength={8}
         placeholder="Password"

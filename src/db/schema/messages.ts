@@ -1,5 +1,12 @@
-import { index, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
+
+// "accepted": normal, unrestricted DM. "pending": a message request from
+// `initiatorId` awaiting the other participant's accept/decline — the
+// initiator is capped to a few messages until then (see
+// lib/actions/messages.ts#sendMessage). "declined": hidden from the
+// recipient's inbox, initiator can no longer send.
+export const conversationStatusEnum = pgEnum("conversation_status", ["accepted", "pending", "declined"]);
 
 // 1:1 only for now — no `is_group` flag yet. A conversation is looked up by
 // finding a row shared between exactly two participants (see
@@ -8,6 +15,11 @@ import { users } from "./users";
 // approach as `follows`/`postReactions`.
 export const conversations = pgTable("conversations", {
   id: uuid("id").primaryKey().defaultRandom(),
+  status: conversationStatusEnum("status").notNull().default("accepted"),
+  // Null for conversations created before the request system (and thus
+  // implicitly "accepted"), and for any row where status is "accepted"
+  // because the participants already mutually followed each other.
+  initiatorId: uuid("initiator_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -40,12 +52,48 @@ export const messages = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    // Set once the recipient's client has received/fetched this message —
+    // distinct from `read`, which is derived from the recipient's
+    // conversationParticipants.lastReadAt (see lib/data/messages.ts).
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // Nullable, self-referencing "reply to" — mirrors comments.parentCommentId.
+    // onDelete "set null" so removing the original doesn't cascade-delete replies.
+    replyToMessageId: uuid("reply_to_message_id"),
+    // Set only when the reply quotes a highlighted substring rather than the
+    // whole original body.
+    replyExcerpt: text("reply_excerpt"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("messages_conversation_created_idx").on(table.conversationId, table.createdAt)]
+  (table) => [
+    index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
+    foreignKey({
+      columns: [table.replyToMessageId],
+      foreignColumns: [table.id],
+      name: "messages_reply_to_message_id_fk",
+    }).onDelete("set null"),
+  ]
+);
+
+export const messageReactions = pgTable(
+  "message_reactions",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.userId], name: "message_reactions_message_id_user_id_pk" }),
+    index("message_reactions_message_idx").on(table.messageId),
+  ]
 );
 
 export type Conversation = typeof conversations.$inferSelect;
 export type ConversationParticipant = typeof conversationParticipants.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
+export type MessageReaction = typeof messageReactions.$inferSelect;
