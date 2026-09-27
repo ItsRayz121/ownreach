@@ -79,9 +79,31 @@ export const channelMessages = pgTable(
   (table) => [index("channel_messages_channel_created_idx").on(table.channelId, table.createdAt)]
 );
 
+// One row per (message, viewer) — the composite PK is what makes a repeat
+// view a no-op, so "views" means unique viewers, not raw impressions. Only
+// meaningful for `communities.kind === "channel"` (broadcast-style reading);
+// groups are conversational and don't get a view count (see communities.ts).
+export const channelMessageViews = pgTable(
+  "channel_message_views",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => channelMessages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.userId], name: "channel_message_views_message_id_user_id_pk" }),
+    index("channel_message_views_message_idx").on(table.messageId),
+  ]
+);
+
 export type Community = typeof communities.$inferSelect;
 export type NewCommunity = typeof communities.$inferInsert;
 export type CommunityMember = typeof communityMembers.$inferSelect;
 export type Channel = typeof channels.$inferSelect;
 export type NewChannel = typeof channels.$inferInsert;
 export type ChannelMessage = typeof channelMessages.$inferSelect;
+export type ChannelMessageView = typeof channelMessageViews.$inferSelect;

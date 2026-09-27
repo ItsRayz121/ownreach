@@ -8,3 +8,4 @@ export * from "./notifications";
 export * from "./messages";
 export * from "./reports";
 export * from "./communities";
+export * from "./social-links";

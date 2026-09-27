@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Bookmark, ShieldCheck } from "lucide-react";
+import { Bell, ShieldCheck } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "./notification-bell";
 
@@ -19,11 +19,6 @@ export function MobileTopBar({ userId, username, unreadNotifications = 0, isAdmi
         OwnReach
       </Link>
       <div className="flex items-center gap-1">
-        {username && (
-          <Link href="/bookmarks" className="rounded-full p-2 hover:bg-accent/60" aria-label="Bookmarks">
-            <Bookmark className="size-5" />
-          </Link>
-        )}
         {isAdmin && (
           <Link href="/admin" className="rounded-full p-2 hover:bg-accent/60" aria-label="Admin">
             <ShieldCheck className="size-5" />

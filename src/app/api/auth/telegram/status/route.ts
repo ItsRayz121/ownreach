@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         usernameSeed,
         metadata: { username: profile.username },
       });
-      return NextResponse.json({ status: "done", redirect: "/settings/connected-accounts" });
+      return NextResponse.json({ status: "done", redirect: "/settings/profile" });
     }
 
     const userId = await findOrCreateUserFromProvider({

@@ -210,7 +210,7 @@ export async function setPassword(input: { email: string; password: string }): P
   // existing address.
   await db.update(users).set({ email }).where(and(eq(users.id, session.userId), isNull(users.email)));
 
-  revalidatePath("/settings/connected-accounts");
+  revalidatePath("/settings/profile");
   return { ok: true };
 }
 
@@ -240,6 +240,6 @@ export async function changePassword(input: { currentPassword: string; newPasswo
   await destroyAllSessionsForUser(session.userId);
   await createSession(session.userId);
 
-  revalidatePath("/settings/connected-accounts");
+  revalidatePath("/settings/profile");
   return { ok: true };
 }

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark } from "lucide-react";
+import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark, Settings, BarChart3 } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
-import { getProfileByUsername, getProfileCounts } from "@/lib/data/profiles";
+import { getProfileByUsername, getProfileCounts, getSocialLinks } from "@/lib/data/profiles";
 import { isFollowing } from "@/lib/data/follows";
 import { getPostsByAuthor } from "@/lib/data/posts";
 import { UserAvatar } from "@/components/user-avatar";
@@ -12,6 +12,8 @@ import { MessageButton } from "@/components/profile/message-button";
 import { PostCard } from "@/components/post/post-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { SocialIcon } from "@/components/social-icon";
+import { SOCIAL_PLATFORM_LABELS } from "@/lib/social-platforms";
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string }> }) {
   const { username } = await params;
@@ -27,10 +29,11 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
 
   const isOwnProfile = session?.userId === profile.userId;
 
-  const [counts, following, { items: posts }] = await Promise.all([
+  const [counts, following, { items: posts }, socialLinks] = await Promise.all([
     getProfileCounts(profile.userId),
     session && !isOwnProfile ? isFollowing(session.userId, profile.userId) : Promise.resolve(false),
     getPostsByAuthor(profile.userId, session?.userId),
+    getSocialLinks(profile.userId),
   ]);
 
   return (
@@ -53,6 +56,12 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
               </Button>
               <Button render={<Link href="/settings/profile" />} nativeButton={false} variant="outline">
                 Edit profile
+              </Button>
+              <Button render={<Link href="/settings/profile" aria-label="Settings" />} nativeButton={false} variant="outline" size="icon">
+                <Settings className="size-4" />
+              </Button>
+              <Button render={<Link href="/settings/analytics" aria-label="Analytics" />} nativeButton={false} variant="outline" size="icon">
+                <BarChart3 className="size-4" />
               </Button>
             </div>
           ) : session ? (
@@ -99,6 +108,24 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
             {profile.createdAt.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
           </span>
         </div>
+
+        {socialLinks.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {socialLinks.map((link) => (
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={link.platform === "other" ? (link.label ?? "Link") : SOCIAL_PLATFORM_LABELS[link.platform]}
+                title={link.platform === "other" ? (link.label ?? "Link") : SOCIAL_PLATFORM_LABELS[link.platform]}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent/60 flex size-8 items-center justify-center rounded-full border"
+              >
+                <SocialIcon platform={link.platform} className="size-4" />
+              </a>
+            ))}
+          </div>
+        )}
 
         <div className="mt-3 flex gap-4 text-sm">
           <span>

@@ -30,7 +30,7 @@ export default async function ChannelPage({
 
   const [members, { items, nextCursor }] = await Promise.all([
     listMembers(community.id),
-    listChannelMessages(channelId),
+    listChannelMessages(channelId, channel.kind),
   ]);
 
   const canManage = isCommunityManager(membership.role);
@@ -47,6 +47,7 @@ export default async function ChannelPage({
       members={members}
       canManage={canManage}
       canPost={canPost}
+      showViews={channel.kind === "channel"}
       initialMessages={items}
       initialNextCursor={nextCursor}
     />

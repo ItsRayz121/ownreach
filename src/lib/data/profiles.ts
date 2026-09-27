@@ -1,7 +1,7 @@
 import "server-only";
-import { and, eq, ilike, ne, or, count } from "drizzle-orm";
+import { and, asc, eq, ilike, ne, or, count } from "drizzle-orm";
 import { db } from "@/db";
-import { profiles, follows, posts, users } from "@/db/schema";
+import { profiles, profileSocialLinks, follows, posts, users } from "@/db/schema";
 import { escapeLikePattern } from "./communities";
 
 const SEARCH_PAGE_SIZE = 20;
@@ -61,4 +61,17 @@ export async function getProfileCounts(userId: string) {
 export async function getProfileByUserId(userId: string) {
   const [row] = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
   return row ?? null;
+}
+
+export async function getSocialLinks(userId: string) {
+  return db
+    .select({
+      id: profileSocialLinks.id,
+      platform: profileSocialLinks.platform,
+      label: profileSocialLinks.label,
+      url: profileSocialLinks.url,
+    })
+    .from(profileSocialLinks)
+    .where(eq(profileSocialLinks.userId, userId))
+    .orderBy(asc(profileSocialLinks.position), asc(profileSocialLinks.createdAt));
 }

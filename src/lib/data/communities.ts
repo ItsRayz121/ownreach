@@ -1,7 +1,15 @@
 import "server-only";
-import { and, count, desc, eq, ilike, inArray, lt, or } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, ilike, inArray, lt, or } from "drizzle-orm";
 import { db } from "@/db";
-import { communities, communityMembers, channels, channelMessages, profiles, type CommunityMember } from "@/db/schema";
+import {
+  communities,
+  communityMembers,
+  channels,
+  channelMessages,
+  channelMessageViews,
+  profiles,
+  type CommunityMember,
+} from "@/db/schema";
 
 const DISCOVER_PAGE_SIZE = 30;
 const CHANNEL_MESSAGE_PAGE_SIZE = 50;
@@ -32,6 +40,8 @@ export interface ChannelMessageItem {
   body: string;
   createdAt: Date;
   senderId: string;
+  /** Unique viewers, channels only — see channelMessageViews for why groups don't get one. */
+  viewCount: number;
 }
 
 interface CursorParts {
@@ -262,9 +272,16 @@ export async function getChannel(channelId: string) {
   return row ?? null;
 }
 
-/** Returns messages in ascending (oldest-first) order; `cursor` pages backward for older history. */
+/**
+ * Returns messages in ascending (oldest-first) order; `cursor` pages backward
+ * for older history. `kind` gates the view-count join — groups are
+ * conversational and don't get one (see channelMessageViews), and skipping
+ * the join for them avoids the extra grouped aggregation on every message
+ * fetch in the far more common group case.
+ */
 export async function listChannelMessages(
   channelId: string,
+  kind: "group" | "channel",
   cursor?: string
 ): Promise<{ items: ChannelMessageItem[]; nextCursor: string | null }> {
   const decoded = decodeCursor(cursor);
@@ -275,16 +292,56 @@ export async function listChannelMessages(
       )
     : undefined;
 
+  if (kind !== "channel") {
+    const rows = await db
+      .select({ id: channelMessages.id, body: channelMessages.body, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId })
+      .from(channelMessages)
+      .where(and(eq(channelMessages.channelId, channelId), cursorFilter))
+      .orderBy(desc(channelMessages.createdAt), desc(channelMessages.id))
+      .limit(CHANNEL_MESSAGE_PAGE_SIZE);
+
+    const last = rows.at(-1);
+    const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
+    return { items: rows.reverse().map((r) => ({ ...r, viewCount: 0 })), nextCursor };
+  }
+
   const rows = await db
-    .select({ id: channelMessages.id, body: channelMessages.body, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId })
+    .select({
+      id: channelMessages.id,
+      body: channelMessages.body,
+      createdAt: channelMessages.createdAt,
+      senderId: channelMessages.senderId,
+      viewCount: countDistinct(channelMessageViews.userId),
+    })
     .from(channelMessages)
+    .leftJoin(channelMessageViews, eq(channelMessageViews.messageId, channelMessages.id))
     .where(and(eq(channelMessages.channelId, channelId), cursorFilter))
+    .groupBy(channelMessages.id)
     .orderBy(desc(channelMessages.createdAt), desc(channelMessages.id))
     .limit(CHANNEL_MESSAGE_PAGE_SIZE);
 
   const last = rows.at(-1);
   const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
   return { items: rows.reverse(), nextCursor };
+}
+
+/**
+ * Records that `viewerId` has seen each of `messageIds` — a no-op for
+ * messages already viewed by them (PK on messageId+userId) and for their own
+ * messages (self-views don't count). Caller is responsible for only calling
+ * this for channel-kind communities. `channelId` scopes the lookup so a
+ * caller can't pad view counts on messages from a channel they were never
+ * membership-checked against by passing arbitrary ids.
+ */
+export async function recordChannelMessageViews(channelId: string, messageIds: string[], viewerId: string): Promise<void> {
+  if (messageIds.length === 0) return;
+  const senders = await db
+    .select({ id: channelMessages.id, senderId: channelMessages.senderId })
+    .from(channelMessages)
+    .where(and(eq(channelMessages.channelId, channelId), inArray(channelMessages.id, messageIds)));
+  const rows = senders.filter((s) => s.senderId !== viewerId).map((s) => ({ messageId: s.id, userId: viewerId }));
+  if (rows.length === 0) return;
+  await db.insert(channelMessageViews).values(rows).onConflictDoNothing();
 }
 
 export async function listMembers(communityId: string) {

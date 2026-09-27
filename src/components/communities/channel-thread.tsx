@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Settings } from "lucide-react";
+import { Eye, Settings } from "lucide-react";
 import { RichText } from "@/components/post/rich-text";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { markCommunityRead, loadOlderChannelMessages } from "@/lib/actions/communities";
+import { markCommunityRead, loadOlderChannelMessages, viewChannelMessages } from "@/lib/actions/communities";
 import { useAblyChannel } from "@/lib/hooks/use-ably-channel";
 import { MemberAvatarStack } from "./member-avatar-stack";
 import { ChannelComposer } from "./channel-composer";
@@ -30,6 +30,7 @@ interface ChannelThreadProps {
   members: ThreadMember[];
   canManage: boolean;
   canPost: boolean;
+  showViews: boolean;
   initialMessages: ChannelMessageItem[];
   initialNextCursor: string | null;
 }
@@ -44,6 +45,7 @@ export function ChannelThread({
   members,
   canManage,
   canPost,
+  showViews,
   initialMessages,
   initialNextCursor,
 }: ChannelThreadProps) {
@@ -52,11 +54,20 @@ export function ChannelThread({
   const [isLoadingOlder, startLoadOlder] = useTransition();
   const bottomRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
+  const viewedRef = useRef(new Set<string>());
   const senderMap = useMemo(() => new Map(members.map((m) => [m.userId, m])), [members]);
 
   useEffect(() => {
     markCommunityRead(communityId).catch(() => {});
   }, [communityId]);
+
+  useEffect(() => {
+    if (!showViews) return;
+    const unseen = messages.filter((m) => m.senderId !== viewerId && !viewedRef.current.has(m.id)).map((m) => m.id);
+    if (unseen.length === 0) return;
+    unseen.forEach((id) => viewedRef.current.add(id));
+    viewChannelMessages(channelId, unseen).catch(() => {});
+  }, [messages, showViews, channelId, viewerId]);
 
   useEffect(() => {
     if (hasScrolledRef.current) return;
@@ -72,7 +83,7 @@ export function ChannelThread({
   useAblyChannel<{ id: string; body: string; senderId: string; createdAt: string }>(
     `channel:${channelId}`,
     "message",
-    (data) => appendMessage({ ...data, createdAt: new Date(data.createdAt) })
+    (data) => appendMessage({ ...data, createdAt: new Date(data.createdAt), viewCount: 0 })
   );
 
   function handleLoadOlder() {
@@ -131,8 +142,19 @@ export function ChannelThread({
               >
                 {!mine && <p className="mb-0.5 text-xs font-medium opacity-80">{sender?.displayName ?? "Member"}</p>}
                 <RichText text={m.body} />
-                <div className={cn("mt-0.5 text-[10px]", mine ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                  {formatRelativeTime(m.createdAt)}
+                <div
+                  className={cn(
+                    "mt-0.5 flex items-center gap-2 text-[10px]",
+                    mine ? "text-primary-foreground/70" : "text-muted-foreground"
+                  )}
+                >
+                  <span>{formatRelativeTime(m.createdAt)}</span>
+                  {showViews && mine && (
+                    <span className="flex items-center gap-0.5" title={`${m.viewCount} view${m.viewCount === 1 ? "" : "s"}`}>
+                      <Eye className="size-2.5" />
+                      {m.viewCount}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

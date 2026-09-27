@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { communities, communityMembers, channels, channelMessages } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { getMembership, getChannel, listChannelMessages } from "@/lib/data/communities";
+import { getMembership, getChannel, listChannelMessages, recordChannelMessageViews } from "@/lib/data/communities";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isCommunityManager } from "@/lib/community-roles";
@@ -159,7 +159,7 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   });
 
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
-  return message;
+  return { ...message, viewCount: 0 };
 }
 
 export async function loadOlderChannelMessages(channelId: string, cursor: string) {
@@ -171,7 +171,21 @@ export async function loadOlderChannelMessages(channelId: string, cursor: string
   const membership = await getMembership(channel.communityId, session.userId);
   if (!membership) throw new Error("You're not a member of this community.");
 
-  return listChannelMessages(channelId, cursor);
+  return listChannelMessages(channelId, channel.kind, cursor);
+}
+
+/** Marks `messageIds` as seen by the caller. No-ops outside channel-kind communities. */
+export async function viewChannelMessages(channelId: string, messageIds: string[]) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  if (messageIds.length === 0) return;
+
+  const channel = await getChannel(channelId);
+  if (!channel || channel.kind !== "channel") return;
+  const membership = await getMembership(channel.communityId, session.userId);
+  if (!membership) return;
+
+  await recordChannelMessageViews(channelId, messageIds, session.userId);
 }
 
 export async function markCommunityRead(communityId: string) {

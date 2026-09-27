@@ -7,8 +7,8 @@ import { createEmailLoginRequest } from "@/lib/auth/email-login";
 import { emailSchema } from "@/lib/auth/validation";
 
 // Login/signup now goes through password auth (see lib/actions/auth.ts) — this
-// route only backs Settings > Connected Accounts' "verify and link an email
-// identity" flow, so `link` is required rather than optional.
+// route only backs the Connected Accounts section of Settings > Profile's
+// "verify and link an email identity" flow, so `link` is required rather than optional.
 const bodySchema = z.object({
   email: emailSchema,
   link: z.literal(true),
