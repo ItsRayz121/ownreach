@@ -1,10 +1,11 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { messages, channelMessages, messagePolls, messagePollOptions, messagePollVotes } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
-import { isParticipant } from "@/lib/data/messages";
+import { checkRateLimit } from "@/lib/ratelimit";
+import { isParticipant, getConversationMeta } from "@/lib/data/messages";
 import { getMembership, getChannel } from "@/lib/data/communities";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 
@@ -24,16 +25,28 @@ async function findPollOwner(pollId: string): Promise<{ scope: "dm"; conversatio
  * unselects it; for a single-choice poll, picking a different option first
  * clears the caller's other vote(s) on the same poll (switching, not adding).
  */
-export async function votePoll(pollId: string, optionId: string) {
+/**
+ * `clientId` is a per-tab random id the caller generates once and reuses for
+ * every vote — it's echoed back in the realtime broadcast so the originating
+ * tab (and only that tab, not every open tab/device for the same account)
+ * can skip re-applying its own already-applied optimistic update.
+ */
+export async function votePoll(pollId: string, optionId: string, clientId?: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("poll:vote", session.userId, { limit: 120, window: "10 m" });
 
   const owner = await findPollOwner(pollId);
   if (!owner) throw new Error("Poll not found.");
 
   if (owner.scope === "dm") {
-    const participant = await isParticipant(owner.conversationId, session.userId);
-    if (!participant) throw new Error("Poll not found.");
+    const [participant, meta] = await Promise.all([isParticipant(owner.conversationId, session.userId), getConversationMeta(owner.conversationId)]);
+    if (!participant || !meta) throw new Error("Poll not found.");
+    // Mirrors sendMessage/createPoll/shareContact — a declined initiator can't
+    // put anything new into the conversation, including a vote.
+    if (meta.status === "declined" && session.userId === meta.initiatorId) {
+      throw new Error("This message request was declined.");
+    }
   } else {
     const channel = await getChannel(owner.channelId);
     if (!channel) throw new Error("Poll not found.");
@@ -49,12 +62,15 @@ export async function votePoll(pollId: string, optionId: string) {
   if (!option) throw new Error("That option doesn't exist.");
 
   // Every branch below determines "did this call actually change a row" from
-  // the statement's own `.returning()` rather than a preceding SELECT, and
-  // the whole thing runs in one transaction — that closes the race where two
-  // concurrent votes both see "no existing vote" and both broadcast an
-  // "added" event, even though the second insert is a no-op under the
-  // (optionId, userId) primary key.
+  // the statement's own `.returning()` rather than a preceding SELECT. The
+  // advisory lock (keyed by poll+voter) serializes this same user's
+  // concurrent votes on this poll, so a rapid switch between two options
+  // under single-choice can't leave both persisted — Postgres's read-committed
+  // gap semantics mean two concurrent "delete rows for pollId+userId" against
+  // *different* target options wouldn't otherwise conflict at the row level.
   const { added, removed } = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${pollId} || ':' || ${session.userId}, 0))`);
+
     const [poll] = await tx.select({ allowMultiple: messagePolls.allowMultiple }).from(messagePolls).where(eq(messagePolls.id, pollId)).limit(1);
     if (!poll) throw new Error("Poll not found.");
 
@@ -88,7 +104,7 @@ export async function votePoll(pollId: string, optionId: string) {
   });
 
   const channelName = owner.scope === "dm" ? `conversation:${owner.conversationId}` : `channel:${owner.channelId}`;
-  await publishToChannel(channelName, "poll-vote", { pollId, userId: session.userId, added, removed });
+  await publishToChannel(channelName, "poll-vote", { pollId, userId: session.userId, clientId, added, removed });
 
   return { added, removed };
 }

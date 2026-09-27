@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { verifySession } from "@/lib/auth/session";
-import { getCommunityBySlugOrId, getChannel, getMembership, listChannelMessages, listMembers, getCommunityMemberCount } from "@/lib/data/communities";
+import { getCommunityBySlugOrId, getChannel, getMembership, listChannelMessages, listMembers } from "@/lib/data/communities";
 import { isCommunityManager } from "@/lib/community-roles";
 import { ChannelThread } from "@/components/communities/channel-thread";
 
@@ -28,11 +28,7 @@ export default async function ChannelPage({
   const membership = await getMembership(community.id, session.userId);
   if (!membership) redirect(`/communities/${community.slug}`);
 
-  const [members, { items, nextCursor }, memberCount] = await Promise.all([
-    listMembers(community.id),
-    listChannelMessages(channelId, session.userId),
-    getCommunityMemberCount(community.id),
-  ]);
+  const [members, { items, nextCursor }] = await Promise.all([listMembers(community.id), listChannelMessages(channelId, session.userId)]);
 
   const canManage = isCommunityManager(membership.role);
   const canPost = channel.kind === "channel" ? canManage : true;
@@ -46,7 +42,7 @@ export default async function ChannelPage({
       avatarUrl={community.avatarUrl}
       viewerId={session.userId}
       members={members}
-      memberCount={memberCount}
+      memberCount={members.length}
       canManage={canManage}
       canPost={canPost}
       kind={channel.kind}

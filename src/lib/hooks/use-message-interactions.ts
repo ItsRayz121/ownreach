@@ -34,7 +34,7 @@ interface UseMessageInteractionsOptions<T extends InteractiveMessage> {
   setMessages: Dispatch<SetStateAction<T[]>>;
   listRef: RefObject<HTMLElement | null>;
   toggleReaction: (messageId: string, emoji: string) => Promise<unknown>;
-  votePoll: (pollId: string, optionId: string) => Promise<unknown>;
+  votePoll: (pollId: string, optionId: string, clientId: string) => Promise<{ added: string[]; removed: string[] }>;
   resolveSenderName: (senderId: string) => string;
 }
 
@@ -55,6 +55,12 @@ export function useMessageInteractions<T extends InteractiveMessage>({
 }: UseMessageInteractionsOptions<T>) {
   const [replyTarget, setReplyTarget] = useState<ComposerReplyTarget | null>(null);
   const [editTarget, setEditTarget] = useState<ComposerEditTarget | null>(null);
+  // Identifies this tab's votes in the realtime "poll-vote" echo, so only the
+  // exact tab that cast a vote skips re-applying it — a second open tab for
+  // the same account still needs the broadcast (see handleVote/thread's
+  // useAblyChannel subscriber). State (with a lazy initializer), not a ref —
+  // its value is read during render (returned below), which refs can't do.
+  const [clientId] = useState<string>(() => crypto.randomUUID());
 
   function handleToggleReaction(messageId: string, emoji: string) {
     const message = messages.find((m) => m.id === messageId);
@@ -103,14 +109,28 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     const option = message?.poll?.options.find((o) => o.id === optionId);
     if (!message?.poll || !option) return;
 
-    const added = option.votedByMe ? [] : [optionId];
-    const removed = option.votedByMe ? [optionId] : message.poll.allowMultiple ? [] : message.poll.options.filter((o) => o.votedByMe).map((o) => o.id);
+    const guessAdded = option.votedByMe ? [] : [optionId];
+    const guessRemoved = option.votedByMe
+      ? [optionId]
+      : message.poll.allowMultiple
+        ? []
+        : message.poll.options.filter((o) => o.votedByMe).map((o) => o.id);
 
-    setMessages((prev) => applyPollVoteEvent(prev, { pollId, userId: viewerId, viewerId, added, removed }));
-    votePoll(pollId, optionId).catch((error) => {
-      setMessages((prev) => applyPollVoteEvent(prev, { pollId, userId: viewerId, viewerId, added: removed, removed: added }));
-      toast.error(error instanceof Error ? error.message : "Couldn't vote on that poll.");
-    });
+    setMessages((prev) => applyPollVoteEvent(prev, { pollId, userId: viewerId, viewerId, added: guessAdded, removed: guessRemoved }));
+    votePoll(pollId, optionId, clientId)
+      .then(({ added, removed }) => {
+        // Reconciles the optimistic guess against what the server actually
+        // applied — under a race (e.g. a double-click serialized by the
+        // server's lock) the real delta can differ from the guess, and this
+        // tab's realtime echo is intentionally skipped (see thread's
+        // useAblyChannel poll-vote handler), so nothing else corrects it.
+        setMessages((prev) => applyPollVoteEvent(prev, { pollId, userId: viewerId, viewerId, added: guessRemoved, removed: guessAdded }));
+        setMessages((prev) => applyPollVoteEvent(prev, { pollId, userId: viewerId, viewerId, added, removed }));
+      })
+      .catch((error) => {
+        setMessages((prev) => applyPollVoteEvent(prev, { pollId, userId: viewerId, viewerId, added: guessRemoved, removed: guessAdded }));
+        toast.error(error instanceof Error ? error.message : "Couldn't vote on that poll.");
+      });
   }
 
   function scrollToMessage(messageId: string) {
@@ -122,6 +142,7 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     setReplyTarget,
     editTarget,
     setEditTarget,
+    clientId,
     handleToggleReaction,
     startReply,
     handleQuote,

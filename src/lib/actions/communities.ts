@@ -218,6 +218,13 @@ export async function editChannelMessage(input: z.infer<typeof editChannelMessag
   if (!existing || existing.senderId !== session.userId) throw new Error("Message not found.");
   if (existing.pollId || existing.sharedContactId) throw new Error("That message can't be edited.");
 
+  // Re-checks membership rather than trusting past authorship — unlike a DM
+  // participant, a community member can leave or be removed after posting.
+  const channel = await getChannel(existing.channelId);
+  if (!channel) throw new Error("Channel not found.");
+  const membership = await getMembership(channel.communityId, session.userId);
+  if (!membership) throw new Error("You're not a member of this community.");
+
   const editedAt = new Date();
   await db.update(channelMessages).set({ body: parsed.body, editedAt }).where(eq(channelMessages.id, parsed.messageId));
 
@@ -287,7 +294,11 @@ export async function shareChannelContact(channelId: string, contactUserId: stri
 const createChannelPollSchema = z.object({
   channelId: z.string().uuid(),
   question: z.string().trim().min(1, "Give the poll a question.").max(300, "Keep the question under 300 characters."),
-  options: z.array(z.string().trim().min(1).max(100)).min(2, "Add at least 2 options.").max(10, "Polls are capped at 10 options."),
+  options: z
+    .array(z.string().trim().min(1).max(100))
+    .min(2, "Add at least 2 options.")
+    .max(10, "Polls are capped at 10 options.")
+    .refine((opts) => new Set(opts.map((o) => o.toLowerCase())).size === opts.length, "Options must be unique."),
   allowMultiple: z.boolean().default(false),
 });
 

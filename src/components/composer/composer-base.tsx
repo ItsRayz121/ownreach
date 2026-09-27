@@ -152,7 +152,11 @@ export function ComposerBase<TMessage>({
           />
           <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
         </div>
-        {!editTarget && extraActions}
+        {/* Poll/contact-share dialogs post standalone messages with no
+            replyToMessageId support — hidden during a reply so creating one
+            can't silently leave the pending reply banner attached to
+            whatever's typed next instead. */}
+        {!editTarget && !replyTarget && extraActions}
         {!editTarget && magicPencil.active && (
           <Button
             type="button"

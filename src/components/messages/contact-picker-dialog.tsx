@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Contact as ContactIcon } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
@@ -30,6 +30,10 @@ export function ContactPickerDialog<TMessage>({ disabled, onShare, onShared }: C
   // from at render time, rather than a separately-tracked loading flag.
   const [lastSearchedQuery, setLastSearchedQuery] = useState<string | null>(null);
   const [isSharing, startTransition] = useTransition();
+  // Guards against an older (slower) request's response landing after a
+  // newer one and overwriting its results — only the response matching the
+  // most recently fired request is applied.
+  const requestIdRef = useRef(0);
 
   const trimmedQuery = query.trim();
   const isSearching = Boolean(trimmedQuery) && lastSearchedQuery !== trimmedQuery;
@@ -38,15 +42,25 @@ export function ContactPickerDialog<TMessage>({ disabled, onShare, onShared }: C
     if (!open) return;
     const trimmed = query.trim();
     const handle = setTimeout(() => {
+      const requestId = ++requestIdRef.current;
       if (!trimmed) {
         setResults([]);
         setLastSearchedQuery(null);
         return;
       }
       searchContacts(trimmed)
-        .then((matches) => setResults(matches))
-        .catch(() => setResults([]))
-        .finally(() => setLastSearchedQuery(trimmed));
+        .then((matches) => {
+          if (requestIdRef.current !== requestId) return;
+          setResults(matches);
+        })
+        .catch(() => {
+          if (requestIdRef.current !== requestId) return;
+          setResults([]);
+        })
+        .finally(() => {
+          if (requestIdRef.current !== requestId) return;
+          setLastSearchedQuery(trimmed);
+        });
     }, 250);
     return () => clearTimeout(handle);
   }, [query, open]);

@@ -91,12 +91,6 @@ export function escapeLikePattern(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-/** For WhatsApp-style group read ticks — a message is "read by all" once viewCount reaches memberCount - 1 (everyone but the sender). */
-export async function getCommunityMemberCount(communityId: string): Promise<number> {
-  const [row] = await db.select({ value: count() }).from(communityMembers).where(eq(communityMembers.communityId, communityId));
-  return row?.value ?? 0;
-}
-
 async function withMemberCounts(rows: { id: string }[]): Promise<Map<string, number>> {
   if (rows.length === 0) return new Map();
   const counts = await db
@@ -376,10 +370,12 @@ export async function listChannelMessages(
 /**
  * Records that `viewerId` has seen each of `messageIds` — a no-op for
  * messages already viewed by them (PK on messageId+userId) and for their own
- * messages (self-views don't count). Caller is responsible for only calling
- * this for channel-kind communities. `channelId` scopes the lookup so a
- * caller can't pad view counts on messages from a channel they were never
- * membership-checked against by passing arbitrary ids.
+ * messages (self-views don't count). Called for both community kinds — the
+ * caller (`viewChannelMessages`) decides how to present the resulting count
+ * per kind (an eye-icon count for "channel", read-tick parity for "group").
+ * `channelId` scopes the lookup so a caller can't pad view counts on messages
+ * from a channel they were never membership-checked against by passing
+ * arbitrary ids.
  */
 export async function recordChannelMessageViews(channelId: string, messageIds: string[], viewerId: string): Promise<void> {
   if (messageIds.length === 0) return;

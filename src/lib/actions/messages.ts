@@ -312,6 +312,7 @@ export async function editMessage(input: z.infer<typeof editMessageSchema>) {
 export async function searchContacts(query: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("contact:search", session.userId, { limit: 60, window: "1 m" });
   if (query.trim().length === 0) return [];
 
   const { matches } = await searchProfiles(query, { excludeUserId: session.userId });
@@ -375,7 +376,11 @@ export async function shareContact(conversationId: string, contactUserId: string
 const createPollSchema = z.object({
   conversationId: z.string().uuid(),
   question: z.string().trim().min(1, "Give the poll a question.").max(300, "Keep the question under 300 characters."),
-  options: z.array(z.string().trim().min(1).max(100)).min(2, "Add at least 2 options.").max(10, "Polls are capped at 10 options."),
+  options: z
+    .array(z.string().trim().min(1).max(100))
+    .min(2, "Add at least 2 options.")
+    .max(10, "Polls are capped at 10 options.")
+    .refine((opts) => new Set(opts.map((o) => o.toLowerCase())).size === opts.length, "Options must be unique."),
   allowMultiple: z.boolean().default(false),
 });
 

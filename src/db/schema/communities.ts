@@ -86,6 +86,8 @@ export const channelMessages = pgTable(
   },
   (table) => [
     index("channel_messages_channel_created_idx").on(table.channelId, table.createdAt),
+    // Looked up by lib/actions/polls.ts#findPollOwner on every vote.
+    index("channel_messages_poll_id_idx").on(table.pollId),
     foreignKey({
       columns: [table.replyToMessageId],
       foreignColumns: [table.id],

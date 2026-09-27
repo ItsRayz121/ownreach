@@ -82,6 +82,7 @@ export function ChannelThread({
     setReplyTarget,
     editTarget,
     setEditTarget,
+    clientId,
     handleToggleReaction,
     startReply,
     handleQuote,
@@ -156,10 +157,17 @@ export function ChannelThread({
     setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, body: data.body, editedAt: new Date(data.editedAt) } : m)));
   });
 
-  useAblyChannel<{ pollId: string; userId: string; added: string[]; removed: string[] }>(`channel:${channelId}`, "poll-vote", (data) => {
-    if (data.userId === viewerId) return;
-    setMessages((prev) => applyPollVoteEvent(prev, { ...data, viewerId }));
-  });
+  // This exact tab's own votes are already applied (and reconciled) in
+  // handleVote — skip only this tab's echo (by clientId, not userId) so
+  // another open tab/device for the same account still gets the update.
+  useAblyChannel<{ pollId: string; userId: string; clientId?: string; added: string[]; removed: string[] }>(
+    `channel:${channelId}`,
+    "poll-vote",
+    (data) => {
+      if (data.clientId === clientId) return;
+      setMessages((prev) => applyPollVoteEvent(prev, { ...data, viewerId }));
+    }
+  );
 
   function handleLoadOlder() {
     if (!nextCursor) return;
@@ -197,11 +205,7 @@ export function ChannelThread({
         )}
       </div>
 
-      <div
-        ref={listRef}
-        onContextMenu={(e) => e.preventDefault()}
-        className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4"
-      >
+      <div ref={listRef} className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4">
         {canPost && <QuoteSelectionPopup containerRef={listRef} onQuote={handleQuote} />}
         {nextCursor && (
           <div className="pb-2 text-center">
@@ -235,7 +239,6 @@ export function ChannelThread({
                 )}
                 <div className="min-w-0">
                   <div
-                    style={{ WebkitTouchCallout: "none" }}
                     className={cn(
                       "max-w-[75%] rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
                       mine ? "bg-primary text-primary-foreground" : "bg-muted",
@@ -256,7 +259,14 @@ export function ChannelThread({
                     ) : m.sharedContact ? (
                       <ContactMessageCard contact={m.sharedContact} mine={mine} />
                     ) : (
-                      <RichText text={m.body} />
+                      // Suppresses the native OS text-selection menu/callout on
+                      // message text only (see QuoteSelectionPopup's in-app
+                      // Copy/Quote replacement) — scoped here, not on the
+                      // whole list, so it doesn't also swallow right-click on
+                      // poll/contact-card links elsewhere in the bubble.
+                      <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
+                        <RichText text={m.body} />
+                      </span>
                     )}
                     <div
                       className={cn(
