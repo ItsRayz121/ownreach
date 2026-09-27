@@ -57,7 +57,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
               <Button render={<Link href="/settings/profile" />} nativeButton={false} variant="outline">
                 Edit profile
               </Button>
-              <Button render={<Link href="/settings/profile" aria-label="Settings" />} nativeButton={false} variant="outline" size="icon">
+              <Button render={<Link href="/settings/account" aria-label="Settings" />} nativeButton={false} variant="outline" size="icon">
                 <Settings className="size-4" />
               </Button>
               <Button render={<Link href="/settings/analytics" aria-label="Analytics" />} nativeButton={false} variant="outline" size="icon">

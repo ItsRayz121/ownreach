@@ -49,15 +49,8 @@ export default async function LoginPage({
           <GoogleButton />
           <TelegramLoginButton />
           <WalletConnectButton />
+          <PasswordAuthForm />
         </div>
-
-        <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-          <div className="h-px flex-1 bg-border" />
-          or
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        <PasswordAuthForm />
 
         <p className="text-muted-foreground mt-8 text-center text-xs text-balance">
           Your password is never shared with Google, Telegram, or your wallet. Wallet sign-in only ever

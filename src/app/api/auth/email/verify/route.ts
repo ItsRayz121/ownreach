@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       email: claimed.email,
     });
 
-    return NextResponse.redirect(new URL("/settings/profile", req.nextUrl.origin));
+    return NextResponse.redirect(new URL("/settings/account", req.nextUrl.origin));
   } catch (error) {
     if (error instanceof ProviderAlreadyLinkedError) {
       return redirectWithError(req, "already_linked");

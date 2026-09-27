@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { setPassword } from "@/lib/actions/auth";
@@ -10,11 +11,21 @@ type Status = "idle" | "submitting" | "error";
 
 export function SetPasswordForm() {
   const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPasswordValue] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  if (!expanded) {
+    return (
+      <Button type="button" variant="outline" size="lg" className="w-full gap-3" onClick={() => setExpanded(true)}>
+        <Mail className="size-[18px]" />
+        Connect email
+      </Button>
+    );
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -37,11 +48,7 @@ export function SetPasswordForm() {
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2 rounded-lg border px-4 py-3">
-      <p className="text-sm font-medium">Set a password</p>
-      <p className="text-muted-foreground mb-1 text-sm">
-        Add a password so you can sign in with an email and password too, not just the methods above.
-      </p>
+    <form onSubmit={submit} className="flex flex-col gap-2">
       <Input
         type="email"
         required
@@ -49,6 +56,7 @@ export function SetPasswordForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         disabled={status === "submitting"}
+        autoFocus
       />
       <Input
         type="password"
@@ -69,9 +77,9 @@ export function SetPasswordForm() {
         disabled={status === "submitting"}
       />
       <Button type="submit" variant="outline" size="lg" className="w-full gap-3" disabled={status === "submitting"}>
-        {status === "submitting" ? "Saving…" : "Set password"}
+        {status === "submitting" ? "Connecting…" : "Connect email"}
       </Button>
-      {error && <p className="text-destructive text-sm">{error}</p>}
+      {error && <p className="text-destructive text-center text-sm">{error}</p>}
     </form>
   );
 }

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/settings/profile", label: "Profile" },
-  { href: "/settings/analytics", label: "Analytics" },
+  { href: "/settings/account", label: "Account" },
 ];
 
 export function SettingsNav() {

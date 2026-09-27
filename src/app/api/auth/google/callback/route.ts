@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
         email: profile.email,
       });
 
-      return NextResponse.redirect(new URL("/settings/profile", req.nextUrl.origin));
+      return NextResponse.redirect(new URL("/settings/account", req.nextUrl.origin));
     }
 
     const userId = await findOrCreateUserFromProvider({
