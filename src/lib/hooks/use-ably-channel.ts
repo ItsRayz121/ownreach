@@ -34,9 +34,26 @@ export function useAblyChannel<T = unknown>(
     const client = getSharedClient();
     const channel = client.channels.get(channelName);
     const listener = (message: Ably.Message) => handlerRef.current(message.data as T);
-    channel.subscribe(eventName, listener);
+    let cancelled = false;
+
+    // A channel/conversation created earlier in this tab session may not be in
+    // the capability set baked into our current token — the shared client is
+    // created once per tab and otherwise only re-authorizes on natural token
+    // expiry. If the attach is denied, re-authorize once to pick up a fresh
+    // capability set and retry, instead of silently missing realtime events
+    // until the token's TTL runs out.
+    channel.subscribe(eventName, listener).catch(() => {
+      if (cancelled) return;
+      client.auth
+        .authorize()
+        .then(() => {
+          if (!cancelled) return channel.subscribe(eventName, listener);
+        })
+        .catch(() => {});
+    });
 
     return () => {
+      cancelled = true;
       channel.unsubscribe(eventName, listener);
     };
   }, [channelName, eventName]);

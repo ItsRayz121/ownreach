@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { MessageCircle, Search as SearchIcon } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
 import { listConversations } from "@/lib/data/messages";
 import { searchProfiles } from "@/lib/data/profiles";
 import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState } from "@/components/empty-state";
-import { Input } from "@/components/ui/input";
+import { HeaderSearchToggle } from "@/components/header-search-toggle";
 import { StartConversationRow } from "@/components/messages/start-conversation-row";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,12 +26,9 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <div className="bg-background/95 sticky top-0 z-20 border-b px-4 py-3.5 backdrop-blur supports-backdrop-filter:bg-background/80">
-        <h1 className="mb-3 text-lg font-semibold">Chats</h1>
-        <form action="/messages" className="relative">
-          <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input name="q" defaultValue={query} placeholder="Search @username" className="pl-9" />
-        </form>
+      <div className="bg-background/95 sticky top-0 z-20 flex items-center justify-between gap-2 border-b px-4 py-3.5 backdrop-blur supports-backdrop-filter:bg-background/80">
+        <h1 className="text-lg font-semibold">Chats</h1>
+        <HeaderSearchToggle action="/messages" name="q" placeholder="Search @username" defaultValue={query} />
       </div>
 
       {query && (

@@ -74,7 +74,7 @@ export async function createCommunity(input: z.infer<typeof createCommunitySchem
     revalidatePath("/communities");
     return { ...community, defaultChannelId };
   } catch (err) {
-    if (isUniqueViolation(err)) throw new Error("That handle's taken. Try a different one.");
+    if (isUniqueViolation(err)) throw new Error("That username's taken. Try a different one.");
     throw err;
   }
 }
@@ -125,27 +125,6 @@ export async function deleteCommunity(communityId: string) {
   await requireCommunityRole(communityId, ["owner"]);
   await db.delete(communities).where(eq(communities.id, communityId));
   revalidatePath("/communities");
-}
-
-const createChannelSchema = z.object({
-  name: z.string().trim().min(2, "Give it a name.").max(40, "Keep the name under 40 characters."),
-  description: z.string().trim().max(200).optional(),
-});
-
-export async function createChannel(communityId: string, input: z.infer<typeof createChannelSchema>) {
-  await requireCommunityRole(communityId, ["owner", "admin"]);
-  const parsed = createChannelSchema.parse(input);
-  const [channel] = await db.insert(channels).values({ communityId, ...parsed }).returning();
-  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
-  return channel;
-}
-
-export async function deleteChannel(channelId: string) {
-  const channel = await getChannel(channelId);
-  if (!channel) throw new Error("Channel not found.");
-  await requireCommunityRole(channel.communityId, ["owner", "admin"]);
-  await db.delete(channels).where(eq(channels.id, channelId));
-  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
 }
 
 const sendChannelMessageSchema = z.object({

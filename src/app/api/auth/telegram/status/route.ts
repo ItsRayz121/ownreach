@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { eq, and } from "drizzle-orm";
-import { db } from "@/db";
-import { telegramLoginRequests } from "@/db/schema";
 import { findOrCreateUserFromProvider, linkProviderToUser, ProviderAlreadyLinkedError } from "@/lib/auth/accounts";
 import { createSession, verifySession } from "@/lib/auth/session";
 import { assertSameOrigin } from "@/lib/auth/http";
 import { TELEGRAM_LOGIN_COOKIE } from "@/lib/auth/constants";
+import { getTelegramLoginRequest, claimConfirmedTelegramLoginRequest } from "@/lib/auth/telegram-login";
 
 export async function POST(req: NextRequest) {
   const originError = assertSameOrigin(req);
@@ -16,11 +14,7 @@ export async function POST(req: NextRequest) {
   const token = cookieStore.get(TELEGRAM_LOGIN_COOKIE)?.value;
   if (!token) return NextResponse.json({ status: "expired" });
 
-  const [request] = await db
-    .select()
-    .from(telegramLoginRequests)
-    .where(eq(telegramLoginRequests.token, token))
-    .limit(1);
+  const request = await getTelegramLoginRequest(token);
 
   if (!request || request.expiresAt < new Date()) {
     cookieStore.delete(TELEGRAM_LOGIN_COOKIE);
@@ -31,13 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "pending" });
   }
 
-  // Atomically claim the confirmed row so a duplicate/retried poll (two tabs,
-  // a flaky connection retrying) can never create a second session from the
-  // same Telegram confirmation.
-  const [claimed] = await db
-    .delete(telegramLoginRequests)
-    .where(and(eq(telegramLoginRequests.token, token), eq(telegramLoginRequests.status, "confirmed")))
-    .returning();
+  const claimed = await claimConfirmedTelegramLoginRequest(token);
 
   cookieStore.delete(TELEGRAM_LOGIN_COOKIE);
 

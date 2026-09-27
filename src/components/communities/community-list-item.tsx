@@ -17,6 +17,7 @@ export function CommunityListItem({ community }: { community: CommunitySummary }
           <span className={cn("truncate text-sm", community.unread ? "font-semibold" : "font-medium")}>
             {community.name}
           </span>
+          <span className="text-muted-foreground shrink-0 truncate text-xs">@{community.slug}</span>
           {community.visibility === "private" && <Lock className="text-muted-foreground size-3 shrink-0" />}
         </div>
         {community.description && (

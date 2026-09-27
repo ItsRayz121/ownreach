@@ -32,7 +32,12 @@ function slugify(name: string) {
     .slice(0, 30);
 }
 
-export function CreateCommunityDialog({ defaultKind = "group" }: { defaultKind?: "group" | "channel" }) {
+interface CreateCommunityDialogProps {
+  defaultKind?: "group" | "channel";
+  iconOnly?: boolean;
+}
+
+export function CreateCommunityDialog({ defaultKind = "group", iconOnly = false }: CreateCommunityDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -81,10 +86,24 @@ export function CreateCommunityDialog({ defaultKind = "group" }: { defaultKind?:
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="gap-2" />}>
-        <Plus className="size-4" />
-        {defaultKind === "channel" ? "Create channel" : "Create group"}
-      </DialogTrigger>
+      {iconOnly ? (
+        <DialogTrigger
+          render={
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground hover:bg-accent/60 shrink-0 rounded-full p-1.5 transition-colors"
+            />
+          }
+          aria-label={defaultKind === "channel" ? "Create channel" : "Create group"}
+        >
+          <Plus className="size-4.5" />
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button className="gap-2" />}>
+          <Plus className="size-4" />
+          {defaultKind === "channel" ? "Create channel" : "Create group"}
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{kind === "channel" ? "Create a channel" : "Create a group"}</DialogTitle>
@@ -136,9 +155,9 @@ export function CreateCommunityDialog({ defaultKind = "group" }: { defaultKind?:
             />
           </div>
           <div>
-            <Label htmlFor="community-slug">Handle</Label>
+            <Label htmlFor="community-slug">Username</Label>
             <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground text-sm">/communities/</span>
+              <span className="text-muted-foreground text-sm">@</span>
               <Input
                 id="community-slug"
                 value={slug}

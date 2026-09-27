@@ -85,10 +85,13 @@ export function ChannelThread({
   }
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-dvh">
+    <div className="flex h-full flex-col">
       <div className="bg-background/95 sticky top-0 z-20 flex items-center gap-2.5 border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80">
         <UserAvatar src={avatarUrl} name={channelName} className="size-8 shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-semibold">{channelName}</span>
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate font-semibold">{channelName}</span>
+          <span className="text-muted-foreground truncate text-xs">@{communitySlug}</span>
+        </span>
         <MemberAvatarStack members={members} />
         {canManage && (
           <Link

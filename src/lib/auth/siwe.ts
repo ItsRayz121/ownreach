@@ -1,5 +1,4 @@
 import "server-only";
-import { randomBytes } from "crypto";
 import { SiweMessage, generateNonce } from "siwe";
 import { eq, lt } from "drizzle-orm";
 import { db } from "@/db";
@@ -24,10 +23,6 @@ export async function consumeSiweNonce(nonce: string) {
   const [row] = await db.delete(siweNonces).where(eq(siweNonces.nonce, nonce)).returning();
   if (!row) return false;
   return row.expiresAt.getTime() > Date.now();
-}
-
-export function randomLinkingState() {
-  return randomBytes(16).toString("hex");
 }
 
 interface VerifySiweArgs {

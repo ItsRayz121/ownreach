@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq, and, gt } from "drizzle-orm";
-import { db } from "@/db";
-import { telegramLoginRequests } from "@/db/schema";
+import { confirmTelegramLoginRequest } from "@/lib/auth/telegram-login";
 import { sendTelegramMessage, TELEGRAM_START_PREFIX } from "@/lib/telegram/bot";
 
 const updateSchema = z.object({
@@ -37,25 +35,12 @@ export async function POST(req: NextRequest) {
   if (message && text.startsWith(`/start ${TELEGRAM_START_PREFIX}`)) {
     const token = text.slice(`/start ${TELEGRAM_START_PREFIX}`.length).trim();
 
-    const [claimed] = await db
-      .update(telegramLoginRequests)
-      .set({
-        status: "confirmed",
-        telegramProfile: {
-          id: String(message.from.id),
-          first_name: message.from.first_name,
-          last_name: message.from.last_name,
-          username: message.from.username,
-        },
-      })
-      .where(
-        and(
-          eq(telegramLoginRequests.token, token),
-          eq(telegramLoginRequests.status, "pending"),
-          gt(telegramLoginRequests.expiresAt, new Date())
-        )
-      )
-      .returning();
+    const claimed = await confirmTelegramLoginRequest(token, {
+      id: String(message.from.id),
+      first_name: message.from.first_name,
+      last_name: message.from.last_name,
+      username: message.from.username,
+    });
 
     // Fire-and-forget: Telegram expects a fast webhook response and retries
     // on timeout, so a slow/unreachable sendMessage call must not hold this up.

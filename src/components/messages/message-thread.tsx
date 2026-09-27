@@ -68,7 +68,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
   }
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col md:h-[calc(100dvh-1px)]">
+    <div className="flex h-full flex-col">
       <div className="bg-background/95 sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80">
         <Link href="/messages" className="text-muted-foreground hover:text-foreground md:hidden">
           <ArrowLeft className="size-5" />

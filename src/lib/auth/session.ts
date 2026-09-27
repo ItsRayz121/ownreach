@@ -73,7 +73,3 @@ export const verifySession = cache(async () => {
 
   return row;
 });
-
-export async function getCurrentUser() {
-  return verifySession();
-}

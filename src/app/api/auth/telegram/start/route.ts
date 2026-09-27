@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { lt } from "drizzle-orm";
-import { db } from "@/db";
-import { telegramLoginRequests } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { assertSameOrigin, getClientIp } from "@/lib/auth/http";
 import { TELEGRAM_LOGIN_COOKIE } from "@/lib/auth/constants";
+import { deleteExpiredTelegramLoginRequests, createTelegramLoginRequest } from "@/lib/auth/telegram-login";
 import { buildTelegramLoginDeepLink, TELEGRAM_LOGIN_TTL_MS } from "@/lib/telegram/bot";
 import { checkRateLimitResponse } from "@/lib/ratelimit";
 
@@ -34,19 +32,12 @@ export async function POST(req: NextRequest) {
     linkUserId = session.userId;
   }
 
-  // Opportunistic cleanup — this table only ever holds a handful of
-  // short-lived rows, so a periodic job would be overkill.
-  await db.delete(telegramLoginRequests).where(lt(telegramLoginRequests.expiresAt, new Date()));
+  await deleteExpiredTelegramLoginRequests();
 
   const token = randomBytes(24).toString("base64url");
   const expiresAt = new Date(Date.now() + TELEGRAM_LOGIN_TTL_MS);
 
-  await db.insert(telegramLoginRequests).values({
-    token,
-    mode: link ? "link" : "signin",
-    linkUserId,
-    expiresAt,
-  });
+  await createTelegramLoginRequest({ token, mode: link ? "link" : "signin", linkUserId, expiresAt });
 
   const cookieStore = await cookies();
   cookieStore.set(TELEGRAM_LOGIN_COOKIE, token, {
