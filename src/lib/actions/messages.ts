@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { conversations, conversationParticipants, messages, messageReactions, follows } from "@/db/schema";
+import { conversations, conversationParticipants, messages, messageReactions, messagePolls, messagePollOptions, follows, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { findConversationBetween, isParticipant, listMessages, getConversationMeta } from "@/lib/data/messages";
+import { searchProfiles } from "@/lib/data/profiles";
 import { MESSAGE_REQUEST_CAP } from "@/lib/message-requests";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isMessageReactionEmoji } from "@/lib/reactions";
@@ -59,6 +60,60 @@ export async function startConversation(targetUserId: string) {
   return { id };
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Enforces the message-request gate (declined-blocks-initiator, pending-cap
+ * on the initiator, implicit-accept on a reply) inside `tx` — shared by
+ * every action that inserts a new message/poll/contact-share row, not just
+ * `sendMessage`, so none of them can bypass the request system by calling a
+ * different action. Caller inserts the row itself after this resolves.
+ */
+async function gateMessageRequest(tx: Tx, conversationId: string, userId: string): Promise<{ becameAccepted: boolean }> {
+  // Serializes concurrent sends into this conversation so the cap check
+  // below (and the implicit-accept flip) can't race across a double-tap or
+  // multiple open tabs/actions.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${conversationId}, 1))`);
+
+  const [meta] = await tx
+    .select({ status: conversations.status, initiatorId: conversations.initiatorId })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!meta) throw new Error("Conversation not found.");
+  // Declining only blocks the initiator from sending more — the recipient
+  // (who declined) can still message back, which implicitly re-accepts the
+  // conversation, mirroring the pending->accepted implicit-accept below.
+  if (meta.status === "declined" && userId === meta.initiatorId) {
+    throw new Error("This message request was declined.");
+  }
+
+  let becameAccepted = false;
+  if (meta.status === "pending") {
+    if (userId === meta.initiatorId) {
+      const sentSoFar = await tx.select({ id: messages.id }).from(messages).where(and(eq(messages.conversationId, conversationId), eq(messages.senderId, userId)));
+      if (sentSoFar.length >= MESSAGE_REQUEST_CAP) {
+        throw new Error("Your message request is limited until they accept.");
+      }
+    } else {
+      // The recipient replying implicitly accepts the request.
+      await tx.update(conversations).set({ status: "accepted" }).where(eq(conversations.id, conversationId));
+      becameAccepted = true;
+    }
+  } else if (meta.status === "declined") {
+    // The recipient sending anyway implicitly re-accepts.
+    await tx.update(conversations).set({ status: "accepted" }).where(eq(conversations.id, conversationId));
+    becameAccepted = true;
+  }
+
+  return { becameAccepted };
+}
+
+async function publishAcceptedIfNeeded(conversationId: string, becameAccepted: boolean) {
+  if (!becameAccepted) return;
+  await publishToChannel(`conversation:${conversationId}`, "request-status", { status: "accepted" });
+}
+
 const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   body: z.string().trim().min(1, "Write something first.").max(2000, "Messages are capped at 2000 characters."),
@@ -89,44 +144,7 @@ export async function sendMessage(input: z.infer<typeof sendMessageSchema>) {
   }
 
   const { message, becameAccepted } = await db.transaction(async (tx) => {
-    // Serializes concurrent sends into this conversation so the
-    // message-request cap check below (and the implicit-accept flip) can't
-    // race across a double-tap or multiple open tabs.
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${parsed.conversationId}, 1))`);
-
-    const [meta] = await tx
-      .select({ status: conversations.status, initiatorId: conversations.initiatorId })
-      .from(conversations)
-      .where(eq(conversations.id, parsed.conversationId))
-      .limit(1);
-    if (!meta) throw new Error("Conversation not found.");
-    // Declining only blocks the initiator from sending more — the recipient
-    // (who declined) can still message back, which implicitly re-accepts the
-    // conversation, mirroring the pending->accepted implicit-accept below.
-    if (meta.status === "declined" && session.userId === meta.initiatorId) {
-      throw new Error("This message request was declined.");
-    }
-
-    let becameAccepted = false;
-    if (meta.status === "pending") {
-      if (session.userId === meta.initiatorId) {
-        const sentSoFar = await tx
-          .select({ id: messages.id })
-          .from(messages)
-          .where(and(eq(messages.conversationId, parsed.conversationId), eq(messages.senderId, session.userId)));
-        if (sentSoFar.length >= MESSAGE_REQUEST_CAP) {
-          throw new Error("Your message request is limited until they accept.");
-        }
-      } else {
-        // The recipient replying implicitly accepts the request.
-        await tx.update(conversations).set({ status: "accepted" }).where(eq(conversations.id, parsed.conversationId));
-        becameAccepted = true;
-      }
-    } else if (meta.status === "declined") {
-      // The recipient sending anyway implicitly re-accepts.
-      await tx.update(conversations).set({ status: "accepted" }).where(eq(conversations.id, parsed.conversationId));
-      becameAccepted = true;
-    }
+    const { becameAccepted } = await gateMessageRequest(tx, parsed.conversationId, session.userId);
 
     const [inserted] = await tx
       .insert(messages)
@@ -157,13 +175,11 @@ export async function sendMessage(input: z.infer<typeof sendMessageSchema>) {
     replyToMessageId: message.replyToMessageId,
     replyExcerpt: message.replyExcerpt,
   });
-  if (becameAccepted) {
-    await publishToChannel(`conversation:${parsed.conversationId}`, "request-status", { status: "accepted" });
-  }
+  await publishAcceptedIfNeeded(parsed.conversationId, becameAccepted);
 
   revalidatePath(`/messages/${parsed.conversationId}`);
   revalidatePath("/messages");
-  return { ...message, deliveredAt: null, replyTo, reactions: [] };
+  return { ...message, deliveredAt: null, editedAt: null, replyTo, reactions: [], sharedContact: null, poll: null };
 }
 
 export async function loadOlderMessages(conversationId: string, cursor: string) {
@@ -173,7 +189,7 @@ export async function loadOlderMessages(conversationId: string, cursor: string) 
   const participant = await isParticipant(conversationId, session.userId);
   if (!participant) throw new Error("Conversation not found.");
 
-  return listMessages(conversationId, cursor);
+  return listMessages(conversationId, session.userId, cursor);
 }
 
 export async function markConversationRead(conversationId: string) {
@@ -193,6 +209,8 @@ export async function markConversationRead(conversationId: string) {
     userId: session.userId,
     readAt: readAt.toISOString(),
   });
+
+  revalidatePath("/(main)", "layout");
 }
 
 /** Marks messages from the other participant as delivered to the caller. */
@@ -257,6 +275,170 @@ export async function toggleMessageReaction(messageId: string, emoji: string) {
   });
 
   return { action, emoji };
+}
+
+const editMessageSchema = z.object({
+  messageId: z.string().uuid(),
+  body: z.string().trim().min(1, "Write something first.").max(2000, "Messages are capped at 2000 characters."),
+});
+
+export async function editMessage(input: z.infer<typeof editMessageSchema>) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("message:send", session.userId, { limit: 60, window: "10 m" });
+  const parsed = editMessageSchema.parse(input);
+
+  const [existing] = await db
+    .select({ conversationId: messages.conversationId, senderId: messages.senderId, pollId: messages.pollId, sharedContactId: messages.sharedContactId })
+    .from(messages)
+    .where(eq(messages.id, parsed.messageId))
+    .limit(1);
+  if (!existing || existing.senderId !== session.userId) throw new Error("Message not found.");
+  if (existing.pollId || existing.sharedContactId) throw new Error("That message can't be edited.");
+
+  const editedAt = new Date();
+  await db.update(messages).set({ body: parsed.body, editedAt }).where(eq(messages.id, parsed.messageId));
+
+  await publishToChannel(`conversation:${existing.conversationId}`, "edited", {
+    messageId: parsed.messageId,
+    body: parsed.body,
+    editedAt: editedAt.toISOString(),
+  });
+
+  revalidatePath(`/messages/${existing.conversationId}`);
+  return { body: parsed.body, editedAt };
+}
+
+export async function searchContacts(query: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  if (query.trim().length === 0) return [];
+
+  const { matches } = await searchProfiles(query, { excludeUserId: session.userId });
+  return matches.slice(0, 10).map((p) => ({ userId: p.userId, username: p.username, displayName: p.displayName, avatarUrl: p.avatarUrl }));
+}
+
+export async function shareContact(conversationId: string, contactUserId: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("message:send", session.userId, { limit: 60, window: "10 m" });
+  if (contactUserId === session.userId) throw new Error("You can't share yourself.");
+
+  const participant = await isParticipant(conversationId, session.userId);
+  if (!participant) throw new Error("Conversation not found.");
+
+  const [contact] = await db
+    .select({ userId: profiles.userId, username: profiles.username, displayName: profiles.displayName, avatarUrl: profiles.avatarUrl })
+    .from(profiles)
+    .where(eq(profiles.userId, contactUserId))
+    .limit(1);
+  if (!contact) throw new Error("That user could not be found.");
+
+  const { message, becameAccepted } = await db.transaction(async (tx) => {
+    const { becameAccepted } = await gateMessageRequest(tx, conversationId, session.userId);
+    const [message] = await tx
+      .insert(messages)
+      .values({ conversationId, senderId: session.userId, body: "", sharedContactId: contactUserId })
+      .returning({ id: messages.id, createdAt: messages.createdAt, senderId: messages.senderId });
+    return { message, becameAccepted };
+  });
+
+  await publishToChannel(`conversation:${conversationId}`, "message", {
+    id: message.id,
+    body: "",
+    senderId: message.senderId,
+    createdAt: message.createdAt.toISOString(),
+    replyToMessageId: null,
+    replyExcerpt: null,
+    sharedContact: contact,
+  });
+  await publishAcceptedIfNeeded(conversationId, becameAccepted);
+
+  revalidatePath(`/messages/${conversationId}`);
+  revalidatePath("/messages");
+  return {
+    id: message.id,
+    body: "",
+    createdAt: message.createdAt,
+    senderId: message.senderId,
+    deliveredAt: null,
+    editedAt: null,
+    replyToMessageId: null,
+    replyExcerpt: null,
+    replyTo: null,
+    reactions: [],
+    sharedContact: contact,
+    poll: null,
+  };
+}
+
+const createPollSchema = z.object({
+  conversationId: z.string().uuid(),
+  question: z.string().trim().min(1, "Give the poll a question.").max(300, "Keep the question under 300 characters."),
+  options: z.array(z.string().trim().min(1).max(100)).min(2, "Add at least 2 options.").max(10, "Polls are capped at 10 options."),
+  allowMultiple: z.boolean().default(false),
+});
+
+export async function createPoll(input: z.infer<typeof createPollSchema>) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("message:send", session.userId, { limit: 60, window: "10 m" });
+  const parsed = createPollSchema.parse(input);
+
+  const participant = await isParticipant(parsed.conversationId, session.userId);
+  if (!participant) throw new Error("Conversation not found.");
+
+  const { message, poll, options, becameAccepted } = await db.transaction(async (tx) => {
+    const { becameAccepted } = await gateMessageRequest(tx, parsed.conversationId, session.userId);
+    const [poll] = await tx
+      .insert(messagePolls)
+      .values({ creatorId: session.userId, question: parsed.question, allowMultiple: parsed.allowMultiple })
+      .returning();
+    const options = await tx
+      .insert(messagePollOptions)
+      .values(parsed.options.map((text, position) => ({ pollId: poll.id, text, position })))
+      .returning({ id: messagePollOptions.id, text: messagePollOptions.text });
+    const [message] = await tx
+      .insert(messages)
+      .values({ conversationId: parsed.conversationId, senderId: session.userId, body: "", pollId: poll.id })
+      .returning({ id: messages.id, createdAt: messages.createdAt, senderId: messages.senderId });
+    return { message, poll, options, becameAccepted };
+  });
+
+  const pollPayload = {
+    id: poll.id,
+    question: poll.question,
+    allowMultiple: poll.allowMultiple,
+    options: options.map((o) => ({ id: o.id, text: o.text, voteCount: 0, votedByMe: false })),
+  };
+
+  await publishToChannel(`conversation:${parsed.conversationId}`, "message", {
+    id: message.id,
+    body: "",
+    senderId: message.senderId,
+    createdAt: message.createdAt.toISOString(),
+    replyToMessageId: null,
+    replyExcerpt: null,
+    poll: pollPayload,
+  });
+  await publishAcceptedIfNeeded(parsed.conversationId, becameAccepted);
+
+  revalidatePath(`/messages/${parsed.conversationId}`);
+  revalidatePath("/messages");
+  return {
+    id: message.id,
+    body: "",
+    createdAt: message.createdAt,
+    senderId: message.senderId,
+    deliveredAt: null,
+    editedAt: null,
+    replyToMessageId: null,
+    replyExcerpt: null,
+    replyTo: null,
+    reactions: [],
+    sharedContact: null,
+    poll: pollPayload,
+  };
 }
 
 async function requireNonInitiator(conversationId: string) {

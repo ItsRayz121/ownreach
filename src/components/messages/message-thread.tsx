@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Reply } from "lucide-react";
+import { ArrowLeft, Reply, Pencil } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import { RichText } from "@/components/post/rich-text";
 import { formatRelativeTime } from "@/lib/format";
@@ -15,8 +15,10 @@ import {
   acceptMessageRequest,
   declineMessageRequest,
 } from "@/lib/actions/messages";
+import { votePoll } from "@/lib/actions/polls";
 import { MESSAGE_REQUEST_CAP } from "@/lib/message-requests";
 import { applyReactionEvent } from "@/lib/reactions";
+import { applyPollVoteEvent } from "@/lib/poll-votes";
 import { useAblyChannel } from "@/lib/hooks/use-ably-channel";
 import { useMessageInteractions } from "@/lib/hooks/use-message-interactions";
 import { MessageComposer } from "./message-composer";
@@ -24,6 +26,8 @@ import { MessageReactions } from "./message-reactions";
 import { MessageStatusTicks, type MessageStatus } from "./message-status-ticks";
 import { QuoteSelectionPopup } from "./quote-selection-popup";
 import { ReplyPreview } from "./reply-preview";
+import { ContactMessageCard } from "./contact-message-card";
+import { PollMessageCard } from "./poll-message-card";
 import type { ComposerReplyTarget } from "./composer-reply-banner";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -64,12 +68,25 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     return senderId === viewerId ? "You" : (other?.displayName ?? "them");
   }
 
-  const { replyTarget, setReplyTarget, handleToggleReaction, handleReply, handleQuote, scrollToMessage } = useMessageInteractions({
+  const {
+    replyTarget,
+    setReplyTarget,
+    editTarget,
+    setEditTarget,
+    handleToggleReaction,
+    startReply,
+    handleQuote,
+    handleEdit,
+    handleEdited,
+    handleVote,
+    scrollToMessage,
+  } = useMessageInteractions({
     messages,
     viewerId,
     setMessages,
     listRef,
     toggleReaction: toggleMessageReaction,
+    votePoll,
     resolveSenderName: senderName,
   });
 
@@ -97,10 +114,13 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
       createdAt: new Date(),
       senderId: viewerId,
       deliveredAt: null,
+      editedAt: null,
       replyToMessageId: target?.messageId ?? null,
       replyExcerpt: target?.excerpt ?? null,
       replyTo: replyToSource ? { id: replyToSource.id, body: replyToSource.body, senderId: replyToSource.senderId } : null,
       reactions: [],
+      sharedContact: null,
+      poll: null,
       pending: true,
     };
     appendMessage(optimistic);
@@ -132,14 +152,19 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     createdAt: string;
     replyToMessageId: string | null;
     replyExcerpt: string | null;
+    sharedContact?: MessageItem["sharedContact"];
+    poll?: MessageItem["poll"];
   }>(`conversation:${conversationId}`, "message", (data) => {
     const replyToSource = data.replyToMessageId ? messages.find((m) => m.id === data.replyToMessageId) : undefined;
     appendMessage({
       ...data,
       createdAt: new Date(data.createdAt),
       deliveredAt: null,
+      editedAt: null,
       replyTo: replyToSource ? { id: replyToSource.id, body: replyToSource.body, senderId: replyToSource.senderId } : null,
       reactions: [],
+      sharedContact: data.sharedContact ?? null,
+      poll: data.poll ?? null,
     });
     markMessagesDelivered(conversationId).catch(() => {});
   });
@@ -161,6 +186,18 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
 
   useAblyChannel<{ status: "accepted" | "declined" }>(`conversation:${conversationId}`, "request-status", (data) => {
     setRequestStatus(data.status);
+  });
+
+  useAblyChannel<{ messageId: string; body: string; editedAt: string }>(`conversation:${conversationId}`, "edited", (data) => {
+    setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, body: data.body, editedAt: new Date(data.editedAt) } : m)));
+  });
+
+  // Own votes are applied optimistically in handleVote — skip the echo so the
+  // voteCount delta isn't double-applied (unlike reactions, this isn't a
+  // idempotent "set from scratch" operation).
+  useAblyChannel<{ pollId: string; userId: string; added: string[]; removed: string[] }>(`conversation:${conversationId}`, "poll-vote", (data) => {
+    if (data.userId === viewerId) return;
+    setMessages((prev) => applyPollVoteEvent(prev, { ...data, viewerId }));
   });
 
   function handleLoadOlder() {
@@ -253,7 +290,11 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         </div>
       )}
 
-      <div ref={listRef} className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4">
+      <div
+        ref={listRef}
+        onContextMenu={(e) => e.preventDefault()}
+        className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4"
+      >
         {!composerDisabled && <QuoteSelectionPopup containerRef={listRef} onQuote={handleQuote} />}
         {nextCursor && (
           <div className="pb-2 text-center">
@@ -269,24 +310,27 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         )}
         {messages.map((m) => {
           const mine = m.senderId === viewerId;
+          const editable = mine && !m.poll && !m.sharedContact;
           return (
             <div key={m.id} data-message-id={m.id} className={cn("group flex", mine ? "justify-end" : "justify-start")}>
               <div className="flex max-w-[75%] items-end gap-1">
                 {!mine && !composerDisabled && (
                   <button
                     type="button"
-                    onClick={() => handleReply(m)}
+                    onClick={() => startReply(m)}
                     aria-label="Reply"
-                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-0 transition-opacity group-hover:opacity-100"
+                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100"
                   >
                     <Reply className="size-3.5" />
                   </button>
                 )}
-                <div>
+                <div className="min-w-0">
                   <div
+                    style={{ WebkitTouchCallout: "none" }}
                     className={cn(
                       "rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
-                      mine ? "bg-primary text-primary-foreground" : "bg-muted"
+                      mine ? "bg-primary text-primary-foreground" : "bg-muted",
+                      (m.poll || m.sharedContact) && "px-2 py-1.5"
                     )}
                   >
                     {m.replyTo && (
@@ -297,7 +341,13 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
                         onClick={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
                       />
                     )}
-                    <RichText text={m.body} />
+                    {m.poll ? (
+                      <PollMessageCard poll={m.poll} mine={mine} onVote={(optionId) => handleVote(m.poll!.id, optionId)} />
+                    ) : m.sharedContact ? (
+                      <ContactMessageCard contact={m.sharedContact} mine={mine} />
+                    ) : (
+                      <RichText text={m.body} />
+                    )}
                     <div
                       className={cn(
                         "mt-0.5 flex items-center gap-1 text-[10px]",
@@ -305,20 +355,23 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
                       )}
                     >
                       <span>{formatRelativeTime(m.createdAt)}</span>
+                      {m.editedAt && <span>· edited</span>}
                       {mine && <MessageStatusTicks status={tickStatus(m)} />}
                     </div>
                   </div>
                   <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
                 </div>
                 {mine && !composerDisabled && (
-                  <button
-                    type="button"
-                    onClick={() => handleReply(m)}
-                    aria-label="Reply"
-                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    <Reply className="size-3.5" />
-                  </button>
+                  <div className="mb-1 flex shrink-0 items-center gap-1.5 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                    {editable && (
+                      <button type="button" onClick={() => handleEdit(m)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+                        <Pencil className="size-3.5" />
+                      </button>
+                    )}
+                    <button type="button" onClick={() => startReply(m)} aria-label="Reply" className="text-muted-foreground hover:text-foreground">
+                      <Reply className="size-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -336,6 +389,9 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         disabledReason={composerDisabledReason}
         replyTarget={replyTarget}
         onCancelReply={() => setReplyTarget(null)}
+        editTarget={editTarget}
+        onCancelEdit={() => setEditTarget(null)}
+        onEdited={handleEdited}
       />
     </div>
   );

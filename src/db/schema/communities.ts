@@ -1,5 +1,6 @@
 import { foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
+import { messagePolls } from "./polls";
 
 export const communityVisibilityEnum = pgEnum("community_visibility", ["public", "private"]);
 export const communityRoleEnum = pgEnum("community_role", ["owner", "admin", "member"]);
@@ -77,6 +78,10 @@ export const channelMessages = pgTable(
     // Nullable, self-referencing "reply to" — see messages.replyToMessageId.
     replyToMessageId: uuid("reply_to_message_id"),
     replyExcerpt: text("reply_excerpt"),
+    // See messages.editedAt/sharedContactId/pollId — same contract here.
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    sharedContactId: uuid("shared_contact_id").references(() => users.id, { onDelete: "set null" }),
+    pollId: uuid("poll_id").references(() => messagePolls.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -108,9 +113,11 @@ export const channelMessageReactions = pgTable(
 );
 
 // One row per (message, viewer) — the composite PK is what makes a repeat
-// view a no-op, so "views" means unique viewers, not raw impressions. Only
-// meaningful for `communities.kind === "channel"` (broadcast-style reading);
-// groups are conversational and don't get a view count (see communities.ts).
+// view a no-op, so "views" means unique viewers, not raw impressions. Used
+// two ways depending on `communities.kind`: "channel" (broadcast) surfaces the
+// raw count as an eye-icon view counter; "group" (conversational) surfaces it
+// as WhatsApp-style read ticks (read-by-all vs. read-by-some), comparing the
+// count against the community's member count instead of displaying it.
 export const channelMessageViews = pgTable(
   "channel_message_views",
   {

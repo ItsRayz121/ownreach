@@ -1,5 +1,6 @@
 import { foreignKey, index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
+import { messagePolls } from "./polls";
 
 // "accepted": normal, unrestricted DM. "pending": a message request from
 // `initiatorId` awaiting the other participant's accept/decline — the
@@ -62,6 +63,16 @@ export const messages = pgTable(
     // Set only when the reply quotes a highlighted substring rather than the
     // whole original body.
     replyExcerpt: text("reply_excerpt"),
+    // Set when the sender edits `body` after sending — WhatsApp-style,
+    // editable any time, no expiry window.
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    // Exactly one of sharedContactId/pollId is set for a "share a contact" or
+    // "poll" message; both null means an ordinary text message. `body` is
+    // still NOT NULL for these (stored as ""), since they're inserted by
+    // separate actions (shareContact/createPoll) that never go through the
+    // sendMessage validation requiring non-empty text.
+    sharedContactId: uuid("shared_contact_id").references(() => users.id, { onDelete: "set null" }),
+    pollId: uuid("poll_id").references(() => messagePolls.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

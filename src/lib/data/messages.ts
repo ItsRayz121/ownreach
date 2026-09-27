@@ -4,13 +4,15 @@ import { and, desc, eq, inArray, lt, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, conversationParticipants, messages, messageReactions, profiles } from "@/db/schema";
 import { buildReplyMap, buildReactionMap } from "./reply-reactions";
+import { buildContactMap, type SharedContactSummary } from "./shared-contacts";
+import { buildPollMap, type PollSummary } from "./polls";
 
 const MESSAGE_PAGE_SIZE = 50;
 
 export interface ConversationSummary {
   id: string;
   other: { userId: string; username: string; displayName: string; avatarUrl: string | null } | null;
-  lastMessage: { body: string; createdAt: Date; senderId: string } | null;
+  lastMessage: { body: string; createdAt: Date; senderId: string; isPoll: boolean; isContact: boolean } | null;
   unread: boolean;
   status: "accepted" | "pending" | "declined";
   initiatorId: string | null;
@@ -27,10 +29,13 @@ export interface MessageItem {
   createdAt: Date;
   senderId: string;
   deliveredAt: Date | null;
+  editedAt: Date | null;
   replyToMessageId: string | null;
   replyExcerpt: string | null;
   replyTo: { id: string; body: string; senderId: string } | null;
   reactions: MessageReactionSummary[];
+  sharedContact: SharedContactSummary | null;
+  poll: PollSummary | null;
 }
 
 interface CursorParts {
@@ -127,6 +132,8 @@ export async function listConversations(userId: string): Promise<ConversationSum
         body: messages.body,
         senderId: messages.senderId,
         createdAt: messages.createdAt,
+        pollId: messages.pollId,
+        sharedContactId: messages.sharedContactId,
       })
       .from(messages)
       .where(inArray(messages.conversationId, conversationIds))
@@ -168,7 +175,15 @@ export async function listConversations(userId: string): Promise<ConversationSum
       return {
         id,
         other: otherUserId ? (profileMap.get(otherUserId) ?? null) : null,
-        lastMessage: lastMessage ? { body: lastMessage.body, createdAt: lastMessage.createdAt, senderId: lastMessage.senderId } : null,
+        lastMessage: lastMessage
+          ? {
+              body: lastMessage.body,
+              createdAt: lastMessage.createdAt,
+              senderId: lastMessage.senderId,
+              isPoll: Boolean(lastMessage.pollId),
+              isContact: Boolean(lastMessage.sharedContactId),
+            }
+          : null,
         unread: Boolean(lastMessage && lastMessage.senderId !== userId && (!lastReadAt || lastMessage.createdAt > lastReadAt)),
         status: meta?.status ?? "accepted",
         initiatorId: meta?.initiatorId ?? null,
@@ -236,7 +251,7 @@ function attachReactions(messageIds: string[]) {
 }
 
 /** Returns messages in ascending (oldest-first) order; `cursor` pages backward for older history. */
-export async function listMessages(conversationId: string, cursor?: string) {
+export async function listMessages(conversationId: string, viewerId: string, cursor?: string) {
   const decoded = decodeCursor(cursor);
   const cursorFilter = decoded
     ? or(
@@ -252,8 +267,11 @@ export async function listMessages(conversationId: string, cursor?: string) {
       createdAt: messages.createdAt,
       senderId: messages.senderId,
       deliveredAt: messages.deliveredAt,
+      editedAt: messages.editedAt,
       replyToMessageId: messages.replyToMessageId,
       replyExcerpt: messages.replyExcerpt,
+      sharedContactId: messages.sharedContactId,
+      pollId: messages.pollId,
     })
     .from(messages)
     .where(and(eq(messages.conversationId, conversationId), cursorFilter))
@@ -264,15 +282,19 @@ export async function listMessages(conversationId: string, cursor?: string) {
   const nextCursor = rows.length === MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
   const ordered = rows.reverse();
 
-  const [replyMap, reactionMap] = await Promise.all([
+  const [replyMap, reactionMap, contactMap, pollMap] = await Promise.all([
     attachReplyPreviews(conversationId, ordered),
     attachReactions(ordered.map((m) => m.id)),
+    buildContactMap(ordered),
+    buildPollMap(ordered, viewerId),
   ]);
 
   const items: MessageItem[] = ordered.map((m) => ({
     ...m,
     replyTo: m.replyToMessageId ? (replyMap.get(m.replyToMessageId) ?? null) : null,
     reactions: reactionMap.get(m.id) ?? [],
+    sharedContact: m.sharedContactId ? (contactMap.get(m.sharedContactId) ?? null) : null,
+    poll: m.pollId ? (pollMap.get(m.pollId) ?? null) : null,
   }));
 
   return { items, nextCursor };

@@ -16,6 +16,12 @@ export const metadata = { title: "Messages / OwnReach", robots: { index: false }
 
 type Filter = "all" | "unread" | "requests";
 
+function lastMessageText(m: { body: string; isPoll: boolean; isContact: boolean }): string {
+  if (m.isPoll) return "📊 Poll";
+  if (m.isContact) return "👤 Contact";
+  return m.body;
+}
+
 export default async function MessagesPage({ searchParams }: { searchParams: Promise<{ q?: string; filter?: string }> }) {
   const { q, filter: filterParam } = await searchParams;
   const filter: Filter = filterParam === "unread" || filterParam === "requests" ? filterParam : "all";
@@ -104,14 +110,14 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
             conversationId={c.id}
             displayName={c.other?.displayName ?? "Unknown user"}
             avatarUrl={c.other?.avatarUrl ?? null}
-            preview={c.lastMessage?.body ?? "Sent you a message request"}
+            preview={c.lastMessage ? lastMessageText(c.lastMessage) : "Sent you a message request"}
           />
         ))
       ) : (
         list.map((c) => {
           const name = c.other?.displayName ?? "Unknown user";
           const preview = c.lastMessage
-            ? `${c.lastMessage.senderId === session.userId ? "You: " : ""}${c.lastMessage.body}`
+            ? `${c.lastMessage.senderId === session.userId ? "You: " : ""}${lastMessageText(c.lastMessage)}`
             : c.status === "pending"
               ? "Message request sent"
               : c.status === "declined"

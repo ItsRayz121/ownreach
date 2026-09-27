@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { communities, communityMembers, channels, channelMessages, channelMessageReactions } from "@/db/schema";
+import { communities, communityMembers, channels, channelMessages, channelMessageReactions, messagePolls, messagePollOptions, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getMembership, getChannel, listChannelMessages, recordChannelMessageViews } from "@/lib/data/communities";
@@ -191,7 +191,168 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   });
 
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
-  return { ...message, viewCount: 0, replyTo, reactions: [] };
+  return { ...message, editedAt: null, viewCount: 0, replyTo, reactions: [], sharedContact: null, poll: null };
+}
+
+const editChannelMessageSchema = z.object({
+  messageId: z.string().uuid(),
+  body: z.string().trim().min(1, "Write something first.").max(2000, "Messages are capped at 2000 characters."),
+});
+
+export async function editChannelMessage(input: z.infer<typeof editChannelMessageSchema>) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("channel:message:send", session.userId, { limit: 60, window: "10 m" });
+  const parsed = editChannelMessageSchema.parse(input);
+
+  const [existing] = await db
+    .select({
+      channelId: channelMessages.channelId,
+      senderId: channelMessages.senderId,
+      pollId: channelMessages.pollId,
+      sharedContactId: channelMessages.sharedContactId,
+    })
+    .from(channelMessages)
+    .where(eq(channelMessages.id, parsed.messageId))
+    .limit(1);
+  if (!existing || existing.senderId !== session.userId) throw new Error("Message not found.");
+  if (existing.pollId || existing.sharedContactId) throw new Error("That message can't be edited.");
+
+  const editedAt = new Date();
+  await db.update(channelMessages).set({ body: parsed.body, editedAt }).where(eq(channelMessages.id, parsed.messageId));
+
+  await publishToChannel(`channel:${existing.channelId}`, "edited", {
+    messageId: parsed.messageId,
+    body: parsed.body,
+    editedAt: editedAt.toISOString(),
+  });
+
+  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
+  return { body: parsed.body, editedAt };
+}
+
+export async function shareChannelContact(channelId: string, contactUserId: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("channel:message:send", session.userId, { limit: 60, window: "10 m" });
+  if (contactUserId === session.userId) throw new Error("You can't share yourself.");
+
+  const channel = await getChannel(channelId);
+  if (!channel) throw new Error("Channel not found.");
+  const membership = await getMembership(channel.communityId, session.userId);
+  if (!membership) throw new Error("You're not a member of this community.");
+  if (channel.kind === "channel" && !isCommunityManager(membership.role)) {
+    throw new Error("Only admins can post in this channel.");
+  }
+
+  const [contact] = await db
+    .select({ userId: profiles.userId, username: profiles.username, displayName: profiles.displayName, avatarUrl: profiles.avatarUrl })
+    .from(profiles)
+    .where(eq(profiles.userId, contactUserId))
+    .limit(1);
+  if (!contact) throw new Error("That user could not be found.");
+
+  const [message] = await db
+    .insert(channelMessages)
+    .values({ channelId, senderId: session.userId, body: "", sharedContactId: contactUserId })
+    .returning({ id: channelMessages.id, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId });
+
+  await publishToChannel(`channel:${channelId}`, "message", {
+    id: message.id,
+    body: "",
+    senderId: message.senderId,
+    createdAt: message.createdAt.toISOString(),
+    replyToMessageId: null,
+    replyExcerpt: null,
+    sharedContact: contact,
+  });
+
+  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
+  return {
+    id: message.id,
+    body: "",
+    createdAt: message.createdAt,
+    senderId: message.senderId,
+    editedAt: null,
+    viewCount: 0,
+    replyToMessageId: null,
+    replyExcerpt: null,
+    replyTo: null,
+    reactions: [],
+    sharedContact: contact,
+    poll: null,
+  };
+}
+
+const createChannelPollSchema = z.object({
+  channelId: z.string().uuid(),
+  question: z.string().trim().min(1, "Give the poll a question.").max(300, "Keep the question under 300 characters."),
+  options: z.array(z.string().trim().min(1).max(100)).min(2, "Add at least 2 options.").max(10, "Polls are capped at 10 options."),
+  allowMultiple: z.boolean().default(false),
+});
+
+export async function createChannelPoll(input: z.infer<typeof createChannelPollSchema>) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("channel:message:send", session.userId, { limit: 60, window: "10 m" });
+  const parsed = createChannelPollSchema.parse(input);
+
+  const channel = await getChannel(parsed.channelId);
+  if (!channel) throw new Error("Channel not found.");
+  const membership = await getMembership(channel.communityId, session.userId);
+  if (!membership) throw new Error("You're not a member of this community.");
+  if (channel.kind === "channel" && !isCommunityManager(membership.role)) {
+    throw new Error("Only admins can post in this channel.");
+  }
+
+  const { message, poll, options } = await db.transaction(async (tx) => {
+    const [poll] = await tx
+      .insert(messagePolls)
+      .values({ creatorId: session.userId, question: parsed.question, allowMultiple: parsed.allowMultiple })
+      .returning();
+    const options = await tx
+      .insert(messagePollOptions)
+      .values(parsed.options.map((text, position) => ({ pollId: poll.id, text, position })))
+      .returning({ id: messagePollOptions.id, text: messagePollOptions.text });
+    const [message] = await tx
+      .insert(channelMessages)
+      .values({ channelId: parsed.channelId, senderId: session.userId, body: "", pollId: poll.id })
+      .returning({ id: channelMessages.id, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId });
+    return { message, poll, options };
+  });
+
+  const pollPayload = {
+    id: poll.id,
+    question: poll.question,
+    allowMultiple: poll.allowMultiple,
+    options: options.map((o) => ({ id: o.id, text: o.text, voteCount: 0, votedByMe: false })),
+  };
+
+  await publishToChannel(`channel:${parsed.channelId}`, "message", {
+    id: message.id,
+    body: "",
+    senderId: message.senderId,
+    createdAt: message.createdAt.toISOString(),
+    replyToMessageId: null,
+    replyExcerpt: null,
+    poll: pollPayload,
+  });
+
+  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
+  return {
+    id: message.id,
+    body: "",
+    createdAt: message.createdAt,
+    senderId: message.senderId,
+    editedAt: null,
+    viewCount: 0,
+    replyToMessageId: null,
+    replyExcerpt: null,
+    replyTo: null,
+    reactions: [],
+    sharedContact: null,
+    poll: pollPayload,
+  };
 }
 
 export async function toggleChannelMessageReaction(messageId: string, emoji: string) {
@@ -250,17 +411,17 @@ export async function loadOlderChannelMessages(channelId: string, cursor: string
   const membership = await getMembership(channel.communityId, session.userId);
   if (!membership) throw new Error("You're not a member of this community.");
 
-  return listChannelMessages(channelId, channel.kind, cursor);
+  return listChannelMessages(channelId, session.userId, cursor);
 }
 
-/** Marks `messageIds` as seen by the caller. No-ops outside channel-kind communities. */
+/** Marks `messageIds` as seen by the caller — powers the channel eye-icon view count and the group read-tick parity. */
 export async function viewChannelMessages(channelId: string, messageIds: string[]) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in.");
   if (messageIds.length === 0) return;
 
   const channel = await getChannel(channelId);
-  if (!channel || channel.kind !== "channel") return;
+  if (!channel) return;
   const membership = await getMembership(channel.communityId, session.userId);
   if (!membership) return;
 
@@ -275,6 +436,8 @@ export async function markCommunityRead(communityId: string) {
     .update(communityMembers)
     .set({ lastReadAt: new Date() })
     .where(and(eq(communityMembers.communityId, communityId), eq(communityMembers.userId, session.userId)));
+
+  revalidatePath("/(main)", "layout");
 }
 
 // Owner-only — prevents admin-to-admin privilege-escalation loops.

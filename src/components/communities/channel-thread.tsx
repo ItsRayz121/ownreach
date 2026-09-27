@@ -2,20 +2,25 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Eye, Settings, Reply } from "lucide-react";
+import { Eye, Settings, Reply, Pencil } from "lucide-react";
 import { RichText } from "@/components/post/rich-text";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { markCommunityRead, loadOlderChannelMessages, viewChannelMessages, toggleChannelMessageReaction } from "@/lib/actions/communities";
+import { votePoll } from "@/lib/actions/polls";
 import { applyReactionEvent } from "@/lib/reactions";
+import { applyPollVoteEvent } from "@/lib/poll-votes";
 import { useAblyChannel } from "@/lib/hooks/use-ably-channel";
 import { useMessageInteractions } from "@/lib/hooks/use-message-interactions";
 import { MemberAvatarStack } from "./member-avatar-stack";
 import { ChannelComposer } from "./channel-composer";
 import { MessageReactions } from "@/components/messages/message-reactions";
+import { MessageStatusTicks, type MessageStatus } from "@/components/messages/message-status-ticks";
 import { QuoteSelectionPopup } from "@/components/messages/quote-selection-popup";
 import { ReplyPreview } from "@/components/messages/reply-preview";
+import { ContactMessageCard } from "@/components/messages/contact-message-card";
+import { PollMessageCard } from "@/components/messages/poll-message-card";
 import type { ChannelMessageItem } from "@/lib/data/communities";
 
 interface ThreadMember {
@@ -33,8 +38,10 @@ interface ChannelThreadProps {
   avatarUrl: string | null;
   viewerId: string;
   members: ThreadMember[];
+  memberCount: number;
   canManage: boolean;
   canPost: boolean;
+  kind: "group" | "channel";
   showViews: boolean;
   initialMessages: ChannelMessageItem[];
   initialNextCursor: string | null;
@@ -48,8 +55,10 @@ export function ChannelThread({
   avatarUrl,
   viewerId,
   members,
+  memberCount,
   canManage,
   canPost,
+  kind,
   showViews,
   initialMessages,
   initialNextCursor,
@@ -68,12 +77,25 @@ export function ChannelThread({
     return senderMap.get(senderId)?.displayName ?? "Member";
   }
 
-  const { replyTarget, setReplyTarget, handleToggleReaction, handleReply, handleQuote, scrollToMessage } = useMessageInteractions({
+  const {
+    replyTarget,
+    setReplyTarget,
+    editTarget,
+    setEditTarget,
+    handleToggleReaction,
+    startReply,
+    handleQuote,
+    handleEdit,
+    handleEdited,
+    handleVote,
+    scrollToMessage,
+  } = useMessageInteractions({
     messages,
     viewerId,
     setMessages,
     listRef,
     toggleReaction: toggleChannelMessageReaction,
+    votePoll,
     resolveSenderName: senderName,
   });
 
@@ -81,13 +103,14 @@ export function ChannelThread({
     markCommunityRead(communityId).catch(() => {});
   }, [communityId]);
 
+  // Tracked for both kinds now — channels render it as an eye-icon view
+  // count, groups compare it against memberCount for WhatsApp-style ticks.
   useEffect(() => {
-    if (!showViews) return;
     const unseen = messages.filter((m) => m.senderId !== viewerId && !viewedRef.current.has(m.id)).map((m) => m.id);
     if (unseen.length === 0) return;
     unseen.forEach((id) => viewedRef.current.add(id));
     viewChannelMessages(channelId, unseen).catch(() => {});
-  }, [messages, showViews, channelId, viewerId]);
+  }, [messages, channelId, viewerId]);
 
   useEffect(() => {
     if (hasScrolledRef.current) return;
@@ -107,14 +130,19 @@ export function ChannelThread({
     createdAt: string;
     replyToMessageId: string | null;
     replyExcerpt: string | null;
+    sharedContact?: ChannelMessageItem["sharedContact"];
+    poll?: ChannelMessageItem["poll"];
   }>(`channel:${channelId}`, "message", (data) => {
     const replyToSource = data.replyToMessageId ? messages.find((m) => m.id === data.replyToMessageId) : undefined;
     appendMessage({
       ...data,
       createdAt: new Date(data.createdAt),
+      editedAt: null,
       viewCount: 0,
       replyTo: replyToSource ? { id: replyToSource.id, body: replyToSource.body, senderId: replyToSource.senderId } : null,
       reactions: [],
+      sharedContact: data.sharedContact ?? null,
+      poll: data.poll ?? null,
     });
   });
 
@@ -124,6 +152,15 @@ export function ChannelThread({
     (data) => setMessages((prev) => applyReactionEvent(prev, data))
   );
 
+  useAblyChannel<{ messageId: string; body: string; editedAt: string }>(`channel:${channelId}`, "edited", (data) => {
+    setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, body: data.body, editedAt: new Date(data.editedAt) } : m)));
+  });
+
+  useAblyChannel<{ pollId: string; userId: string; added: string[]; removed: string[] }>(`channel:${channelId}`, "poll-vote", (data) => {
+    if (data.userId === viewerId) return;
+    setMessages((prev) => applyPollVoteEvent(prev, { ...data, viewerId }));
+  });
+
   function handleLoadOlder() {
     if (!nextCursor) return;
     startLoadOlder(async () => {
@@ -131,6 +168,13 @@ export function ChannelThread({
       setMessages((prev) => [...items, ...prev]);
       setNextCursor(newCursor);
     });
+  }
+
+  function tickStatus(m: ChannelMessageItem): MessageStatus {
+    const othersCount = Math.max(0, memberCount - 1);
+    if (othersCount === 0 || m.viewCount === 0) return "sent";
+    if (m.viewCount >= othersCount) return "read";
+    return "delivered";
   }
 
   return (
@@ -153,7 +197,11 @@ export function ChannelThread({
         )}
       </div>
 
-      <div ref={listRef} className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4">
+      <div
+        ref={listRef}
+        onContextMenu={(e) => e.preventDefault()}
+        className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4"
+      >
         {canPost && <QuoteSelectionPopup containerRef={listRef} onQuote={handleQuote} />}
         {nextCursor && (
           <div className="pb-2 text-center">
@@ -170,6 +218,7 @@ export function ChannelThread({
         {messages.map((m) => {
           const mine = m.senderId === viewerId;
           const sender = senderMap.get(m.senderId);
+          const editable = mine && !m.poll && !m.sharedContact;
           return (
             <div key={m.id} data-message-id={m.id} className={cn("group flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
               {!mine && <UserAvatar src={sender?.avatarUrl} name={sender?.displayName ?? "Member"} className="size-7 shrink-0" />}
@@ -177,18 +226,20 @@ export function ChannelThread({
                 {!mine && canPost && (
                   <button
                     type="button"
-                    onClick={() => handleReply(m)}
+                    onClick={() => startReply(m)}
                     aria-label="Reply"
-                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-0 transition-opacity group-hover:opacity-100"
+                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100"
                   >
                     <Reply className="size-3.5" />
                   </button>
                 )}
-                <div>
+                <div className="min-w-0">
                   <div
+                    style={{ WebkitTouchCallout: "none" }}
                     className={cn(
                       "max-w-[75%] rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
-                      mine ? "bg-primary text-primary-foreground" : "bg-muted"
+                      mine ? "bg-primary text-primary-foreground" : "bg-muted",
+                      (m.poll || m.sharedContact) && "px-2 py-1.5"
                     )}
                   >
                     {!mine && <p className="mb-0.5 text-xs font-medium opacity-80">{sender?.displayName ?? "Member"}</p>}
@@ -200,7 +251,13 @@ export function ChannelThread({
                         onClick={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
                       />
                     )}
-                    <RichText text={m.body} />
+                    {m.poll ? (
+                      <PollMessageCard poll={m.poll} mine={mine} onVote={(optionId) => handleVote(m.poll!.id, optionId)} />
+                    ) : m.sharedContact ? (
+                      <ContactMessageCard contact={m.sharedContact} mine={mine} />
+                    ) : (
+                      <RichText text={m.body} />
+                    )}
                     <div
                       className={cn(
                         "mt-0.5 flex items-center gap-2 text-[10px]",
@@ -208,25 +265,29 @@ export function ChannelThread({
                       )}
                     >
                       <span>{formatRelativeTime(m.createdAt)}</span>
+                      {m.editedAt && <span>· edited</span>}
                       {showViews && mine && (
                         <span className="flex items-center gap-0.5" title={`${m.viewCount} view${m.viewCount === 1 ? "" : "s"}`}>
                           <Eye className="size-2.5" />
                           {m.viewCount}
                         </span>
                       )}
+                      {kind === "group" && mine && <MessageStatusTicks status={tickStatus(m)} />}
                     </div>
                   </div>
                   <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
                 </div>
                 {mine && canPost && (
-                  <button
-                    type="button"
-                    onClick={() => handleReply(m)}
-                    aria-label="Reply"
-                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    <Reply className="size-3.5" />
-                  </button>
+                  <div className="mb-1 flex shrink-0 items-center gap-1.5 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                    {editable && (
+                      <button type="button" onClick={() => handleEdit(m)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+                        <Pencil className="size-3.5" />
+                      </button>
+                    )}
+                    <button type="button" onClick={() => startReply(m)} aria-label="Reply" className="text-muted-foreground hover:text-foreground">
+                      <Reply className="size-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -241,6 +302,9 @@ export function ChannelThread({
           onSent={appendMessage}
           replyTarget={replyTarget}
           onCancelReply={() => setReplyTarget(null)}
+          editTarget={editTarget}
+          onCancelEdit={() => setEditTarget(null)}
+          onEdited={handleEdited}
         />
       ) : (
         <div className="text-muted-foreground border-t px-4 py-3 text-center text-sm">

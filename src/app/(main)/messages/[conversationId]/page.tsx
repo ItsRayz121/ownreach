@@ -21,7 +21,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ c
 
   const [other, { items, nextCursor }, meta] = await Promise.all([
     getOtherParticipant(conversationId, session.userId),
-    listMessages(conversationId),
+    listMessages(conversationId, session.userId),
     getConversationMeta(conversationId),
   ]);
 

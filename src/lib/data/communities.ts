@@ -12,6 +12,8 @@ import {
   type CommunityMember,
 } from "@/db/schema";
 import { buildReplyMap, buildReactionMap } from "./reply-reactions";
+import { buildContactMap, type SharedContactSummary } from "./shared-contacts";
+import { buildPollMap, type PollSummary } from "./polls";
 
 const DISCOVER_PAGE_SIZE = 30;
 const CHANNEL_MESSAGE_PAGE_SIZE = 50;
@@ -47,12 +49,15 @@ export interface ChannelMessageItem {
   body: string;
   createdAt: Date;
   senderId: string;
-  /** Unique viewers, channels only — see channelMessageViews for why groups don't get one. */
+  editedAt: Date | null;
+  /** Unique viewers — an eye-icon count for `kind: "channel"`, or read-tick parity (vs. member count) for `kind: "group"`. */
   viewCount: number;
   replyToMessageId: string | null;
   replyExcerpt: string | null;
   replyTo: { id: string; body: string; senderId: string } | null;
   reactions: ChannelMessageReactionSummary[];
+  sharedContact: SharedContactSummary | null;
+  poll: PollSummary | null;
 }
 
 interface CursorParts {
@@ -84,6 +89,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // filtering, since the `%` is interpreted as "any characters" either side of it.
 export function escapeLikePattern(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/** For WhatsApp-style group read ticks — a message is "read by all" once viewCount reaches memberCount - 1 (everyone but the sender). */
+export async function getCommunityMemberCount(communityId: string): Promise<number> {
+  const [row] = await db.select({ value: count() }).from(communityMembers).where(eq(communityMembers.communityId, communityId));
+  return row?.value ?? 0;
 }
 
 async function withMemberCounts(rows: { id: string }[]): Promise<Map<string, number>> {
@@ -304,14 +315,13 @@ function attachChannelReactions(messageIds: string[]) {
 
 /**
  * Returns messages in ascending (oldest-first) order; `cursor` pages backward
- * for older history. `kind` gates the view-count join — groups are
- * conversational and don't get one (see channelMessageViews), and skipping
- * the join for them avoids the extra grouped aggregation on every message
- * fetch in the far more common group case.
+ * for older history. `viewCount` (unique viewers) is always computed — the
+ * caller decides how to present it: an eye-icon count for `kind: "channel"`,
+ * or WhatsApp-style read ticks (vs. member count) for `kind: "group"`.
  */
 export async function listChannelMessages(
   channelId: string,
-  kind: "group" | "channel",
+  viewerId: string,
   cursor?: string
 ): Promise<{ items: ChannelMessageItem[]; nextCursor: string | null }> {
   const decoded = decodeCursor(cursor);
@@ -322,47 +332,17 @@ export async function listChannelMessages(
       )
     : undefined;
 
-  if (kind !== "channel") {
-    const rows = await db
-      .select({
-        id: channelMessages.id,
-        body: channelMessages.body,
-        createdAt: channelMessages.createdAt,
-        senderId: channelMessages.senderId,
-        replyToMessageId: channelMessages.replyToMessageId,
-        replyExcerpt: channelMessages.replyExcerpt,
-      })
-      .from(channelMessages)
-      .where(and(eq(channelMessages.channelId, channelId), cursorFilter))
-      .orderBy(desc(channelMessages.createdAt), desc(channelMessages.id))
-      .limit(CHANNEL_MESSAGE_PAGE_SIZE);
-
-    const last = rows.at(-1);
-    const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
-    const ordered = rows.reverse();
-    const [replyMap, reactionMap] = await Promise.all([
-      attachChannelReplyPreviews(channelId, ordered),
-      attachChannelReactions(ordered.map((m) => m.id)),
-    ]);
-    return {
-      items: ordered.map((r) => ({
-        ...r,
-        viewCount: 0,
-        replyTo: r.replyToMessageId ? (replyMap.get(r.replyToMessageId) ?? null) : null,
-        reactions: reactionMap.get(r.id) ?? [],
-      })),
-      nextCursor,
-    };
-  }
-
   const rows = await db
     .select({
       id: channelMessages.id,
       body: channelMessages.body,
       createdAt: channelMessages.createdAt,
       senderId: channelMessages.senderId,
+      editedAt: channelMessages.editedAt,
       replyToMessageId: channelMessages.replyToMessageId,
       replyExcerpt: channelMessages.replyExcerpt,
+      sharedContactId: channelMessages.sharedContactId,
+      pollId: channelMessages.pollId,
       viewCount: countDistinct(channelMessageViews.userId),
     })
     .from(channelMessages)
@@ -375,15 +355,19 @@ export async function listChannelMessages(
   const last = rows.at(-1);
   const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
   const ordered = rows.reverse();
-  const [replyMap, reactionMap] = await Promise.all([
+  const [replyMap, reactionMap, contactMap, pollMap] = await Promise.all([
     attachChannelReplyPreviews(channelId, ordered),
     attachChannelReactions(ordered.map((m) => m.id)),
+    buildContactMap(ordered),
+    buildPollMap(ordered, viewerId),
   ]);
   return {
     items: ordered.map((r) => ({
       ...r,
       replyTo: r.replyToMessageId ? (replyMap.get(r.replyToMessageId) ?? null) : null,
       reactions: reactionMap.get(r.id) ?? [],
+      sharedContact: r.sharedContactId ? (contactMap.get(r.sharedContactId) ?? null) : null,
+      poll: r.pollId ? (pollMap.get(r.pollId) ?? null) : null,
     })),
     nextCursor,
   };
