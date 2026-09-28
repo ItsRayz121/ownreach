@@ -1,6 +1,7 @@
 import { foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
 import { messagePolls } from "./polls";
+import { messageMedia } from "./media";
 
 export const communityVisibilityEnum = pgEnum("community_visibility", ["public", "private"]);
 export const communityRoleEnum = pgEnum("community_role", ["owner", "admin", "member"]);
@@ -82,6 +83,8 @@ export const channelMessages = pgTable(
     editedAt: timestamp("edited_at", { withTimezone: true }),
     sharedContactId: uuid("shared_contact_id").references(() => users.id, { onDelete: "set null" }),
     pollId: uuid("poll_id").references(() => messagePolls.id, { onDelete: "set null" }),
+    // See messages.mediaId — same contract here.
+    mediaId: uuid("media_id").references(() => messageMedia.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

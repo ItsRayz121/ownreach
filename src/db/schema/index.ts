@@ -10,3 +10,4 @@ export * from "./reports";
 export * from "./communities";
 export * from "./social-links";
 export * from "./polls";
+export * from "./media";

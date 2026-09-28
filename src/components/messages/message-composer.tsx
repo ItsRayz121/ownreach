@@ -1,6 +1,6 @@
 "use client";
 
-import { ComposerBase, type ComposerEditTarget } from "@/components/composer/composer-base";
+import { ComposerBase, type ComposerEditTarget, type PendingAttachment } from "@/components/composer/composer-base";
 import { sendMessage, createPoll, shareContact, editMessage } from "@/lib/actions/messages";
 import { PollComposerDialog } from "./poll-composer-dialog";
 import { ContactPickerDialog } from "./contact-picker-dialog";
@@ -10,7 +10,7 @@ import type { MessageItem } from "@/lib/data/messages";
 interface MessageComposerProps {
   conversationId: string;
   onSent: (message: MessageItem, tempId?: string) => void;
-  onOptimisticSend?: (tempId: string, body: string, replyTarget: ComposerReplyTarget | null) => void;
+  onOptimisticSend?: (tempId: string, body: string, replyTarget: ComposerReplyTarget | null, attachment: PendingAttachment | null) => void;
   onSendError?: (tempId: string) => void;
   disabled?: boolean;
   disabledReason?: string;
@@ -31,12 +31,16 @@ export function MessageComposer({ conversationId, editTarget, onCancelEdit, onEd
         const result = await editMessage({ messageId, body });
         onEdited?.(messageId, result.body, result.editedAt);
       }}
-      onSend={(body, replyTarget) =>
+      onSend={(body, replyTarget, attachment) =>
         sendMessage({
           conversationId,
           body,
           replyToMessageId: replyTarget?.messageId,
           replyExcerpt: replyTarget?.excerpt,
+          mediaUrl: attachment?.url,
+          mediaPublicId: attachment?.publicId,
+          mediaWidth: attachment?.width,
+          mediaHeight: attachment?.height,
         })
       }
       extraActions={

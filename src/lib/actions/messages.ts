@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { conversations, conversationParticipants, messages, messageReactions, messagePolls, messagePollOptions, follows, profiles } from "@/db/schema";
+import { conversations, conversationParticipants, messages, messageReactions, messagePolls, messagePollOptions, messageMedia, follows, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { findConversationBetween, isParticipant, listMessages, getConversationMeta } from "@/lib/data/messages";
@@ -13,6 +13,11 @@ import { MESSAGE_REQUEST_CAP } from "@/lib/message-requests";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isMessageReactionEmoji } from "@/lib/reactions";
 import { toggleReactionCore } from "@/lib/actions/reaction-toggle";
+import { mediaExpiryDate } from "@/lib/media-retention";
+import { assertOwnMessageMedia } from "@/lib/media-ownership";
+import { cloudinary } from "@/lib/cloudinary";
+import { isUniqueViolation } from "@/lib/db-errors";
+import type { MediaSummary } from "@/lib/data/media";
 
 async function isMutualFollow(userA: string, userB: string): Promise<boolean> {
   const rows = await db
@@ -114,12 +119,35 @@ async function publishAcceptedIfNeeded(conversationId: string, becameAccepted: b
   await publishToChannel(`conversation:${conversationId}`, "request-status", { status: "accepted" });
 }
 
-const sendMessageSchema = z.object({
-  conversationId: z.string().uuid(),
-  body: z.string().trim().min(1, "Write something first.").max(2000, "Messages are capped at 2000 characters."),
-  replyToMessageId: z.string().uuid().optional(),
-  replyExcerpt: z.string().trim().max(500).optional(),
-});
+const sendMessageSchema = z
+  .object({
+    conversationId: z.string().uuid(),
+    body: z.string().trim().max(2000, "Messages are capped at 2000 characters."),
+    replyToMessageId: z.string().uuid().optional(),
+    replyExcerpt: z.string().trim().max(500).optional(),
+    mediaUrl: z
+      .string()
+      .url()
+      .refine((url) => {
+        try {
+          return new URL(url).hostname === "res.cloudinary.com";
+        } catch {
+          // .url() already rejects most malformed input, but refine()
+          // still runs even when an earlier check on the same schema
+          // failed — without this catch, an edge case that slips past
+          // .url() but still fails `new URL()` would throw a raw
+          // TypeError instead of a normal validation error.
+          return false;
+        }
+      }, "Media must be uploaded through Cloudinary.")
+      .optional(),
+    mediaPublicId: z.string().min(1).max(300).optional(),
+    mediaWidth: z.number().int().positive().optional(),
+    mediaHeight: z.number().int().positive().optional(),
+  })
+  // A caption-less image is a valid send — only reject the fully-empty case.
+  .refine((v) => v.body.length > 0 || Boolean(v.mediaUrl), { message: "Write something or attach an image.", path: ["body"] })
+  .refine((v) => !v.mediaUrl || Boolean(v.mediaPublicId), { message: "Missing media reference.", path: ["mediaPublicId"] });
 
 export async function sendMessage(input: z.infer<typeof sendMessageSchema>) {
   const session = await verifySession();
@@ -127,6 +155,7 @@ export async function sendMessage(input: z.infer<typeof sendMessageSchema>) {
   await checkRateLimit("message:send", session.userId, { limit: 60, window: "10 m" });
 
   const parsed = sendMessageSchema.parse(input);
+  if (parsed.mediaUrl) assertOwnMessageMedia(session.userId, parsed.mediaUrl, parsed.mediaPublicId!);
   const participant = await isParticipant(parsed.conversationId, session.userId);
   if (!participant) throw new Error("Conversation not found.");
 
@@ -143,29 +172,58 @@ export async function sendMessage(input: z.infer<typeof sendMessageSchema>) {
     replyTo = original;
   }
 
-  const { message, becameAccepted } = await db.transaction(async (tx) => {
-    const { becameAccepted } = await gateMessageRequest(tx, parsed.conversationId, session.userId);
+  const { message, becameAccepted, media } = await (async () => {
+    try {
+      return await db.transaction(async (tx) => {
+        const { becameAccepted } = await gateMessageRequest(tx, parsed.conversationId, session.userId);
 
-    const [inserted] = await tx
-      .insert(messages)
-      .values({
-        conversationId: parsed.conversationId,
-        senderId: session.userId,
-        body: parsed.body,
-        replyToMessageId: replyTo?.id,
-        replyExcerpt: parsed.replyExcerpt,
-      })
-      .returning({
-        id: messages.id,
-        body: messages.body,
-        createdAt: messages.createdAt,
-        senderId: messages.senderId,
-        replyToMessageId: messages.replyToMessageId,
-        replyExcerpt: messages.replyExcerpt,
+        let mediaId: string | undefined;
+        let media: MediaSummary | null = null;
+        if (parsed.mediaUrl) {
+          const [row] = await tx
+            .insert(messageMedia)
+            .values({
+              uploaderId: session.userId,
+              url: parsed.mediaUrl,
+              publicId: parsed.mediaPublicId,
+              width: parsed.mediaWidth,
+              height: parsed.mediaHeight,
+              expiresAt: mediaExpiryDate("dm"),
+            })
+            .returning({ id: messageMedia.id, url: messageMedia.url, width: messageMedia.width, height: messageMedia.height });
+          mediaId = row.id;
+          media = { url: row.url, width: row.width, height: row.height, removed: false };
+        }
+
+        const [inserted] = await tx
+          .insert(messages)
+          .values({
+            conversationId: parsed.conversationId,
+            senderId: session.userId,
+            body: parsed.body,
+            replyToMessageId: replyTo?.id,
+            replyExcerpt: parsed.replyExcerpt,
+            mediaId,
+          })
+          .returning({
+            id: messages.id,
+            body: messages.body,
+            createdAt: messages.createdAt,
+            senderId: messages.senderId,
+            replyToMessageId: messages.replyToMessageId,
+            replyExcerpt: messages.replyExcerpt,
+          });
+
+        return { message: inserted, becameAccepted, media };
       });
-
-    return { message: inserted, becameAccepted };
-  });
+    } catch (err) {
+      // messageMedia.publicId is uniquely indexed (db/schema/media.ts) —
+      // this is the one row a replayed/duplicated send with the same
+      // attachment would collide on.
+      if (isUniqueViolation(err)) throw new Error("That photo was already sent.");
+      throw err;
+    }
+  })();
 
   await publishToChannel(`conversation:${parsed.conversationId}`, "message", {
     id: message.id,
@@ -174,12 +232,13 @@ export async function sendMessage(input: z.infer<typeof sendMessageSchema>) {
     createdAt: message.createdAt.toISOString(),
     replyToMessageId: message.replyToMessageId,
     replyExcerpt: message.replyExcerpt,
+    media,
   });
   await publishAcceptedIfNeeded(parsed.conversationId, becameAccepted);
 
   revalidatePath(`/messages/${parsed.conversationId}`);
   revalidatePath("/messages");
-  return { ...message, deliveredAt: null, editedAt: null, replyTo, reactions: [], sharedContact: null, poll: null };
+  return { ...message, deliveredAt: null, editedAt: null, replyTo, reactions: [], sharedContact: null, poll: null, media };
 }
 
 export async function loadOlderMessages(conversationId: string, cursor: string) {
@@ -309,6 +368,52 @@ export async function editMessage(input: z.infer<typeof editMessageSchema>) {
   return { body: parsed.body, editedAt };
 }
 
+/**
+ * Manual per-image delete, independent of the retention cron
+ * (api/cron/purge-expired-media) — same "sender, or a site admin" authority
+ * as deletePost. Soft-deletes the messageMedia row rather than the message
+ * itself, so the bubble still renders (with its caption, if any) but the
+ * photo shows as removed.
+ */
+export async function deleteMessageMedia(messageId: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+
+  const [existing] = await db
+    .select({ conversationId: messages.conversationId, senderId: messages.senderId, mediaId: messages.mediaId })
+    .from(messages)
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  if (!existing) throw new Error("Message not found.");
+  if (existing.senderId !== session.userId && session.role !== "admin") {
+    throw new Error("You can only delete your own photos.");
+  }
+  if (!existing.mediaId) throw new Error("This message has no photo.");
+
+  const [media] = await db
+    .select({ publicId: messageMedia.publicId, removedAt: messageMedia.removedAt })
+    .from(messageMedia)
+    .where(eq(messageMedia.id, existing.mediaId))
+    .limit(1);
+  if (!media || media.removedAt) return;
+
+  await db
+    .update(messageMedia)
+    .set({ removedAt: new Date(), url: null, publicId: null, width: null, height: null })
+    .where(eq(messageMedia.id, existing.mediaId));
+
+  if (media.publicId) {
+    // Awaited (unlike publishToChannel below) — on a serverless runtime an
+    // un-awaited destroy() can be cut short once this action's own promise
+    // resolves, silently leaving the Cloudinary asset undeleted despite the
+    // DB row already saying "removed".
+    await cloudinary.uploader.destroy(media.publicId).catch(() => {});
+  }
+
+  await publishToChannel(`conversation:${existing.conversationId}`, "media-removed", { messageId });
+  revalidatePath(`/messages/${existing.conversationId}`);
+}
+
 export async function searchContacts(query: string) {
   const session = await verifySession();
   if (!session) throw new Error("You must be signed in.");
@@ -370,6 +475,7 @@ export async function shareContact(conversationId: string, contactUserId: string
     reactions: [],
     sharedContact: contact,
     poll: null,
+    media: null,
   };
 }
 
@@ -443,6 +549,7 @@ export async function createPoll(input: z.infer<typeof createPollSchema>) {
     reactions: [],
     sharedContact: null,
     poll: pollPayload,
+    media: null,
   };
 }
 

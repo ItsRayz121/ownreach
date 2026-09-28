@@ -6,6 +6,7 @@ import { conversations, conversationParticipants, messages, messageReactions, pr
 import { buildReplyMap, buildReactionMap } from "./reply-reactions";
 import { buildContactMap, type SharedContactSummary } from "./shared-contacts";
 import { buildPollMap, type PollSummary } from "./polls";
+import { buildMediaMap, type MediaSummary } from "./media";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -36,6 +37,7 @@ export interface MessageItem {
   reactions: MessageReactionSummary[];
   sharedContact: SharedContactSummary | null;
   poll: PollSummary | null;
+  media: MediaSummary | null;
 }
 
 interface CursorParts {
@@ -272,6 +274,7 @@ export async function listMessages(conversationId: string, viewerId: string, cur
       replyExcerpt: messages.replyExcerpt,
       sharedContactId: messages.sharedContactId,
       pollId: messages.pollId,
+      mediaId: messages.mediaId,
     })
     .from(messages)
     .where(and(eq(messages.conversationId, conversationId), cursorFilter))
@@ -282,11 +285,12 @@ export async function listMessages(conversationId: string, viewerId: string, cur
   const nextCursor = rows.length === MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
   const ordered = rows.reverse();
 
-  const [replyMap, reactionMap, contactMap, pollMap] = await Promise.all([
+  const [replyMap, reactionMap, contactMap, pollMap, mediaMap] = await Promise.all([
     attachReplyPreviews(conversationId, ordered),
     attachReactions(ordered.map((m) => m.id)),
     buildContactMap(ordered),
     buildPollMap(ordered, viewerId),
+    buildMediaMap(ordered),
   ]);
 
   const items: MessageItem[] = ordered.map((m) => ({
@@ -295,6 +299,7 @@ export async function listMessages(conversationId: string, viewerId: string, cur
     reactions: reactionMap.get(m.id) ?? [],
     sharedContact: m.sharedContactId ? (contactMap.get(m.sharedContactId) ?? null) : null,
     poll: m.pollId ? (pollMap.get(m.pollId) ?? null) : null,
+    media: m.mediaId ? (mediaMap.get(m.mediaId) ?? null) : null,
   }));
 
   return { items, nextCursor };

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { communities, communityMembers, channels, channelMessages, channelMessageReactions, messagePolls, messagePollOptions, profiles } from "@/db/schema";
+import { communities, communityMembers, channels, channelMessages, channelMessageReactions, messagePolls, messagePollOptions, messageMedia, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getMembership, getChannel, listChannelMessages, recordChannelMessageViews } from "@/lib/data/communities";
@@ -13,6 +13,10 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { isCommunityManager } from "@/lib/community-roles";
 import { isMessageReactionEmoji } from "@/lib/reactions";
 import { toggleReactionCore } from "@/lib/actions/reaction-toggle";
+import { mediaExpiryDate } from "@/lib/media-retention";
+import { assertOwnMessageMedia } from "@/lib/media-ownership";
+import { cloudinary } from "@/lib/cloudinary";
+import type { MediaSummary } from "@/lib/data/media";
 
 type CommunityRole = "owner" | "admin" | "member";
 
@@ -129,12 +133,35 @@ export async function deleteCommunity(communityId: string) {
   revalidatePath("/communities");
 }
 
-const sendChannelMessageSchema = z.object({
-  channelId: z.string().uuid(),
-  body: z.string().trim().min(1, "Write something first.").max(2000, "Messages are capped at 2000 characters."),
-  replyToMessageId: z.string().uuid().optional(),
-  replyExcerpt: z.string().trim().max(500).optional(),
-});
+const sendChannelMessageSchema = z
+  .object({
+    channelId: z.string().uuid(),
+    body: z.string().trim().max(2000, "Messages are capped at 2000 characters."),
+    replyToMessageId: z.string().uuid().optional(),
+    replyExcerpt: z.string().trim().max(500).optional(),
+    mediaUrl: z
+      .string()
+      .url()
+      .refine((url) => {
+        try {
+          return new URL(url).hostname === "res.cloudinary.com";
+        } catch {
+          // .url() already rejects most malformed input, but refine() still
+          // runs even when an earlier check on the same schema failed —
+          // without this catch, an edge case that slips past .url() but
+          // still fails `new URL()` would throw a raw TypeError instead of
+          // a normal validation error.
+          return false;
+        }
+      }, "Media must be uploaded through Cloudinary.")
+      .optional(),
+    mediaPublicId: z.string().min(1).max(300).optional(),
+    mediaWidth: z.number().int().positive().optional(),
+    mediaHeight: z.number().int().positive().optional(),
+  })
+  // A caption-less image is a valid send — only reject the fully-empty case.
+  .refine((v) => v.body.length > 0 || Boolean(v.mediaUrl), { message: "Write something or attach an image.", path: ["body"] })
+  .refine((v) => !v.mediaUrl || Boolean(v.mediaPublicId), { message: "Missing media reference.", path: ["mediaPublicId"] });
 
 export async function sendChannelMessage(input: z.infer<typeof sendChannelMessageSchema>) {
   const session = await verifySession();
@@ -142,6 +169,7 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   await checkRateLimit("channel:message:send", session.userId, { limit: 60, window: "10 m" });
 
   const parsed = sendChannelMessageSchema.parse(input);
+  if (parsed.mediaUrl) assertOwnMessageMedia(session.userId, parsed.mediaUrl, parsed.mediaPublicId!);
   const channel = await getChannel(parsed.channelId);
   if (!channel) throw new Error("Channel not found.");
   const membership = await getMembership(channel.communityId, session.userId);
@@ -163,23 +191,56 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
     replyTo = original;
   }
 
-  const [message] = await db
-    .insert(channelMessages)
-    .values({
-      channelId: parsed.channelId,
-      senderId: session.userId,
-      body: parsed.body,
-      replyToMessageId: replyTo?.id,
-      replyExcerpt: parsed.replyExcerpt,
-    })
-    .returning({
-      id: channelMessages.id,
-      body: channelMessages.body,
-      createdAt: channelMessages.createdAt,
-      senderId: channelMessages.senderId,
-      replyToMessageId: channelMessages.replyToMessageId,
-      replyExcerpt: channelMessages.replyExcerpt,
-    });
+  const { message, media } = await (async () => {
+    try {
+      return await db.transaction(async (tx) => {
+        let mediaId: string | undefined;
+        let media: MediaSummary | null = null;
+        if (parsed.mediaUrl) {
+          const [row] = await tx
+            .insert(messageMedia)
+            .values({
+              uploaderId: session.userId,
+              url: parsed.mediaUrl,
+              publicId: parsed.mediaPublicId,
+              width: parsed.mediaWidth,
+              height: parsed.mediaHeight,
+              expiresAt: mediaExpiryDate(channel.kind),
+            })
+            .returning({ id: messageMedia.id, url: messageMedia.url, width: messageMedia.width, height: messageMedia.height });
+          mediaId = row.id;
+          media = { url: row.url, width: row.width, height: row.height, removed: false };
+        }
+
+        const [inserted] = await tx
+          .insert(channelMessages)
+          .values({
+            channelId: parsed.channelId,
+            senderId: session.userId,
+            body: parsed.body,
+            replyToMessageId: replyTo?.id,
+            replyExcerpt: parsed.replyExcerpt,
+            mediaId,
+          })
+          .returning({
+            id: channelMessages.id,
+            body: channelMessages.body,
+            createdAt: channelMessages.createdAt,
+            senderId: channelMessages.senderId,
+            replyToMessageId: channelMessages.replyToMessageId,
+            replyExcerpt: channelMessages.replyExcerpt,
+          });
+
+        return { message: inserted, media };
+      });
+    } catch (err) {
+      // messageMedia.publicId is uniquely indexed (db/schema/media.ts) —
+      // this is the one row a replayed/duplicated send with the same
+      // attachment would collide on.
+      if (isUniqueViolation(err)) throw new Error("That photo was already sent.");
+      throw err;
+    }
+  })();
 
   await publishToChannel(`channel:${parsed.channelId}`, "message", {
     id: message.id,
@@ -188,10 +249,11 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
     createdAt: message.createdAt.toISOString(),
     replyToMessageId: message.replyToMessageId,
     replyExcerpt: message.replyExcerpt,
+    media,
   });
 
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
-  return { ...message, editedAt: null, viewCount: 0, replyTo, reactions: [], sharedContact: null, poll: null };
+  return { ...message, editedAt: null, viewCount: 0, replyTo, reactions: [], sharedContact: null, poll: null, media };
 }
 
 const editChannelMessageSchema = z.object({
@@ -288,6 +350,7 @@ export async function shareChannelContact(channelId: string, contactUserId: stri
     reactions: [],
     sharedContact: contact,
     poll: null,
+    media: null,
   };
 }
 
@@ -363,7 +426,53 @@ export async function createChannelPoll(input: z.infer<typeof createChannelPollS
     reactions: [],
     sharedContact: null,
     poll: pollPayload,
+    media: null,
   };
+}
+
+/** See deleteMessageMedia (lib/actions/messages.ts) — same contract, community-manager-or-sender authority instead of admin-or-sender. */
+export async function deleteChannelMessageMedia(messageId: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+
+  const [existing] = await db
+    .select({ channelId: channelMessages.channelId, senderId: channelMessages.senderId, mediaId: channelMessages.mediaId })
+    .from(channelMessages)
+    .where(eq(channelMessages.id, messageId))
+    .limit(1);
+  if (!existing) throw new Error("Message not found.");
+
+  if (existing.senderId !== session.userId) {
+    const channel = await getChannel(existing.channelId);
+    const membership = channel ? await getMembership(channel.communityId, session.userId) : null;
+    if (!membership || !isCommunityManager(membership.role)) {
+      throw new Error("You can only delete your own photos.");
+    }
+  }
+  if (!existing.mediaId) throw new Error("This message has no photo.");
+
+  const [media] = await db
+    .select({ publicId: messageMedia.publicId, removedAt: messageMedia.removedAt })
+    .from(messageMedia)
+    .where(eq(messageMedia.id, existing.mediaId))
+    .limit(1);
+  if (!media || media.removedAt) return;
+
+  await db
+    .update(messageMedia)
+    .set({ removedAt: new Date(), url: null, publicId: null, width: null, height: null })
+    .where(eq(messageMedia.id, existing.mediaId));
+
+  if (media.publicId) {
+    // Awaited (unlike publishToChannel below) — on a serverless runtime an
+    // un-awaited destroy() can be cut short once this action's own promise
+    // resolves, silently leaving the Cloudinary asset undeleted despite the
+    // DB row already saying "removed".
+    await cloudinary.uploader.destroy(media.publicId).catch(() => {});
+  }
+
+  await publishToChannel(`channel:${existing.channelId}`, "media-removed", { messageId });
+  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
 }
 
 export async function toggleChannelMessageReaction(messageId: string, emoji: string) {

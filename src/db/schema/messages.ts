@@ -1,6 +1,7 @@
 import { foreignKey, index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
 import { messagePolls } from "./polls";
+import { messageMedia } from "./media";
 
 // "accepted": normal, unrestricted DM. "pending": a message request from
 // `initiatorId` awaiting the other participant's accept/decline — the
@@ -73,6 +74,10 @@ export const messages = pgTable(
     // sendMessage validation requiring non-empty text.
     sharedContactId: uuid("shared_contact_id").references(() => users.id, { onDelete: "set null" }),
     pollId: uuid("poll_id").references(() => messagePolls.id, { onDelete: "set null" }),
+    // Set when the message carries an image — inserted by sendMessage itself
+    // (unlike sharedContactId/pollId above), with `body` doubling as an
+    // optional caption that can be "".
+    mediaId: uuid("media_id").references(() => messageMedia.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

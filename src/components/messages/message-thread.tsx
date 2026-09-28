@@ -12,6 +12,7 @@ import {
   loadOlderMessages,
   markMessagesDelivered,
   toggleMessageReaction,
+  deleteMessageMedia,
   acceptMessageRequest,
   declineMessageRequest,
 } from "@/lib/actions/messages";
@@ -28,7 +29,9 @@ import { QuoteSelectionPopup } from "./quote-selection-popup";
 import { ReplyPreview } from "./reply-preview";
 import { ContactMessageCard } from "./contact-message-card";
 import { PollMessageCard } from "./poll-message-card";
+import { MediaMessageCard } from "./media-message-card";
 import type { ComposerReplyTarget } from "./composer-reply-banner";
+import type { PendingAttachment } from "@/components/composer/composer-base";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import type { MessageItem } from "@/lib/data/messages";
@@ -80,6 +83,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     handleEdit,
     handleEdited,
     handleVote,
+    handleDeleteMedia,
     scrollToMessage,
   } = useMessageInteractions({
     messages,
@@ -88,6 +92,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     listRef,
     toggleReaction: toggleMessageReaction,
     votePoll,
+    deleteMedia: deleteMessageMedia,
     resolveSenderName: senderName,
   });
 
@@ -107,7 +112,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }));
   }
 
-  function handleOptimisticSend(tempId: string, body: string, target: ComposerReplyTarget | null) {
+  function handleOptimisticSend(tempId: string, body: string, target: ComposerReplyTarget | null, attachment: PendingAttachment | null) {
     const replyToSource = target ? messages.find((m) => m.id === target.messageId) : undefined;
     const optimistic: ThreadMessage = {
       id: tempId,
@@ -122,6 +127,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
       reactions: [],
       sharedContact: null,
       poll: null,
+      media: attachment ? { url: attachment.url, width: attachment.width, height: attachment.height, removed: false } : null,
       pending: true,
     };
     appendMessage(optimistic);
@@ -155,6 +161,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     replyExcerpt: string | null;
     sharedContact?: MessageItem["sharedContact"];
     poll?: MessageItem["poll"];
+    media?: MessageItem["media"];
   }>(`conversation:${conversationId}`, "message", (data) => {
     const replyToSource = data.replyToMessageId ? messages.find((m) => m.id === data.replyToMessageId) : undefined;
     appendMessage({
@@ -166,8 +173,13 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
       reactions: [],
       sharedContact: data.sharedContact ?? null,
       poll: data.poll ?? null,
+      media: data.media ?? null,
     });
     markMessagesDelivered(conversationId).catch(() => {});
+  });
+
+  useAblyChannel<{ messageId: string }>(`conversation:${conversationId}`, "media-removed", (data) => {
+    setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, media: { url: null, width: null, height: null, removed: true } } : m)));
   });
 
   useAblyChannel<{ userId: string; readAt: string }>(`conversation:${conversationId}`, "read", (data) => {
@@ -330,7 +342,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
                     className={cn(
                       "rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
                       mine ? "bg-primary text-primary-foreground" : "bg-muted",
-                      (m.poll || m.sharedContact) && "px-2 py-1.5"
+                      (m.poll || m.sharedContact || m.media) && "px-2 py-1.5"
                     )}
                   >
                     {m.replyTo && (
@@ -345,6 +357,19 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
                       <PollMessageCard poll={m.poll} mine={mine} onVote={(optionId) => handleVote(m.poll!.id, optionId)} />
                     ) : m.sharedContact ? (
                       <ContactMessageCard contact={m.sharedContact} mine={mine} />
+                    ) : m.media ? (
+                      <div className="flex flex-col gap-1.5">
+                        <MediaMessageCard
+                          media={m.media}
+                          mine={mine}
+                          onDelete={mine && !m.media.removed ? () => handleDeleteMedia(m.id) : undefined}
+                        />
+                        {m.body && (
+                          <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
+                            <RichText text={m.body} />
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       // Suppresses the native OS text-selection menu/callout on
                       // message text only (see QuoteSelectionPopup's in-app

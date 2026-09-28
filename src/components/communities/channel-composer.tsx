@@ -27,12 +27,16 @@ export function ChannelComposer({ channelId, editTarget, onCancelEdit, onEdited,
         const result = await editChannelMessage({ messageId, body });
         onEdited?.(messageId, result.body, result.editedAt);
       }}
-      onSend={(body, replyTarget) =>
+      onSend={(body, replyTarget, attachment) =>
         sendChannelMessage({
           channelId,
           body,
           replyToMessageId: replyTarget?.messageId,
           replyExcerpt: replyTarget?.excerpt,
+          mediaUrl: attachment?.url,
+          mediaPublicId: attachment?.publicId,
+          mediaWidth: attachment?.width,
+          mediaHeight: attachment?.height,
         })
       }
       extraActions={

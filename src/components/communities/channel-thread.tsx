@@ -7,7 +7,13 @@ import { RichText } from "@/components/post/rich-text";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { markCommunityRead, loadOlderChannelMessages, viewChannelMessages, toggleChannelMessageReaction } from "@/lib/actions/communities";
+import {
+  markCommunityRead,
+  loadOlderChannelMessages,
+  viewChannelMessages,
+  toggleChannelMessageReaction,
+  deleteChannelMessageMedia,
+} from "@/lib/actions/communities";
 import { votePoll } from "@/lib/actions/polls";
 import { applyReactionEvent } from "@/lib/reactions";
 import { applyPollVoteEvent } from "@/lib/poll-votes";
@@ -21,6 +27,7 @@ import { QuoteSelectionPopup } from "@/components/messages/quote-selection-popup
 import { ReplyPreview } from "@/components/messages/reply-preview";
 import { ContactMessageCard } from "@/components/messages/contact-message-card";
 import { PollMessageCard } from "@/components/messages/poll-message-card";
+import { MediaMessageCard } from "@/components/messages/media-message-card";
 import type { ChannelMessageItem } from "@/lib/data/communities";
 
 interface ThreadMember {
@@ -89,6 +96,7 @@ export function ChannelThread({
     handleEdit,
     handleEdited,
     handleVote,
+    handleDeleteMedia,
     scrollToMessage,
   } = useMessageInteractions({
     messages,
@@ -97,6 +105,7 @@ export function ChannelThread({
     listRef,
     toggleReaction: toggleChannelMessageReaction,
     votePoll,
+    deleteMedia: deleteChannelMessageMedia,
     resolveSenderName: senderName,
   });
 
@@ -133,6 +142,7 @@ export function ChannelThread({
     replyExcerpt: string | null;
     sharedContact?: ChannelMessageItem["sharedContact"];
     poll?: ChannelMessageItem["poll"];
+    media?: ChannelMessageItem["media"];
   }>(`channel:${channelId}`, "message", (data) => {
     const replyToSource = data.replyToMessageId ? messages.find((m) => m.id === data.replyToMessageId) : undefined;
     appendMessage({
@@ -144,7 +154,12 @@ export function ChannelThread({
       reactions: [],
       sharedContact: data.sharedContact ?? null,
       poll: data.poll ?? null,
+      media: data.media ?? null,
     });
+  });
+
+  useAblyChannel<{ messageId: string }>(`channel:${channelId}`, "media-removed", (data) => {
+    setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, media: { url: null, width: null, height: null, removed: true } } : m)));
   });
 
   useAblyChannel<{ messageId: string; userId: string; emoji: string; action: "added" | "removed" }>(
@@ -242,7 +257,7 @@ export function ChannelThread({
                     className={cn(
                       "max-w-[75%] rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
                       mine ? "bg-primary text-primary-foreground" : "bg-muted",
-                      (m.poll || m.sharedContact) && "px-2 py-1.5"
+                      (m.poll || m.sharedContact || m.media) && "px-2 py-1.5"
                     )}
                   >
                     {!mine && <p className="mb-0.5 text-xs font-medium opacity-80">{sender?.displayName ?? "Member"}</p>}
@@ -258,6 +273,19 @@ export function ChannelThread({
                       <PollMessageCard poll={m.poll} mine={mine} onVote={(optionId) => handleVote(m.poll!.id, optionId)} />
                     ) : m.sharedContact ? (
                       <ContactMessageCard contact={m.sharedContact} mine={mine} />
+                    ) : m.media ? (
+                      <div className="flex flex-col gap-1.5">
+                        <MediaMessageCard
+                          media={m.media}
+                          mine={mine}
+                          onDelete={(mine || canManage) && !m.media.removed ? () => handleDeleteMedia(m.id) : undefined}
+                        />
+                        {m.body && (
+                          <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
+                            <RichText text={m.body} />
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       // Suppresses the native OS text-selection menu/callout on
                       // message text only (see QuoteSelectionPopup's in-app

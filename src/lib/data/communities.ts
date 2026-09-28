@@ -14,6 +14,7 @@ import {
 import { buildReplyMap, buildReactionMap } from "./reply-reactions";
 import { buildContactMap, type SharedContactSummary } from "./shared-contacts";
 import { buildPollMap, type PollSummary } from "./polls";
+import { buildMediaMap, type MediaSummary } from "./media";
 
 const DISCOVER_PAGE_SIZE = 30;
 const CHANNEL_MESSAGE_PAGE_SIZE = 50;
@@ -58,6 +59,7 @@ export interface ChannelMessageItem {
   reactions: ChannelMessageReactionSummary[];
   sharedContact: SharedContactSummary | null;
   poll: PollSummary | null;
+  media: MediaSummary | null;
 }
 
 interface CursorParts {
@@ -337,6 +339,7 @@ export async function listChannelMessages(
       replyExcerpt: channelMessages.replyExcerpt,
       sharedContactId: channelMessages.sharedContactId,
       pollId: channelMessages.pollId,
+      mediaId: channelMessages.mediaId,
       viewCount: countDistinct(channelMessageViews.userId),
     })
     .from(channelMessages)
@@ -349,11 +352,12 @@ export async function listChannelMessages(
   const last = rows.at(-1);
   const nextCursor = rows.length === CHANNEL_MESSAGE_PAGE_SIZE && last ? encodeCursor(last) : null;
   const ordered = rows.reverse();
-  const [replyMap, reactionMap, contactMap, pollMap] = await Promise.all([
+  const [replyMap, reactionMap, contactMap, pollMap, mediaMap] = await Promise.all([
     attachChannelReplyPreviews(channelId, ordered),
     attachChannelReactions(ordered.map((m) => m.id)),
     buildContactMap(ordered),
     buildPollMap(ordered, viewerId),
+    buildMediaMap(ordered),
   ]);
   return {
     items: ordered.map((r) => ({
@@ -362,6 +366,7 @@ export async function listChannelMessages(
       reactions: reactionMap.get(r.id) ?? [],
       sharedContact: r.sharedContactId ? (contactMap.get(r.sharedContactId) ?? null) : null,
       poll: r.pollId ? (pollMap.get(r.pollId) ?? null) : null,
+      media: r.mediaId ? (mediaMap.get(r.mediaId) ?? null) : null,
     })),
     nextCursor,
   };

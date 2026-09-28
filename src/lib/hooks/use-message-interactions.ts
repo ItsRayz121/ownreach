@@ -20,11 +20,13 @@ interface InteractiveMessage extends ReactableItem {
   editedAt: Date | null;
   poll?: { id: string; question: string; allowMultiple: boolean; options: InteractivePollOption[] } | null;
   sharedContact?: { displayName: string } | null;
+  media?: { url: string | null; width: number | null; height: number | null; removed: boolean } | null;
 }
 
 function excerptFor(message: InteractiveMessage): string {
   if (message.poll) return `📊 ${message.poll.question}`;
   if (message.sharedContact) return `👤 ${message.sharedContact.displayName}`;
+  if (message.media && !message.media.removed) return message.body ? `📷 ${message.body}` : "📷 Photo";
   return message.body.slice(0, 120);
 }
 
@@ -35,6 +37,7 @@ interface UseMessageInteractionsOptions<T extends InteractiveMessage> {
   listRef: RefObject<HTMLElement | null>;
   toggleReaction: (messageId: string, emoji: string) => Promise<unknown>;
   votePoll: (pollId: string, optionId: string, clientId: string) => Promise<{ added: string[]; removed: string[] }>;
+  deleteMedia: (messageId: string) => Promise<unknown>;
   resolveSenderName: (senderId: string) => string;
 }
 
@@ -51,6 +54,7 @@ export function useMessageInteractions<T extends InteractiveMessage>({
   listRef,
   toggleReaction,
   votePoll,
+  deleteMedia,
   resolveSenderName,
 }: UseMessageInteractionsOptions<T>) {
   const [replyTarget, setReplyTarget] = useState<ComposerReplyTarget | null>(null);
@@ -137,6 +141,18 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     listRef.current?.querySelector(`[data-message-id="${messageId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  function handleDeleteMedia(messageId: string) {
+    const message = messages.find((m) => m.id === messageId);
+    if (!message?.media) return;
+    const previousMedia = message.media;
+
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, media: { url: null, width: null, height: null, removed: true } } : m)));
+    deleteMedia(messageId).catch((error) => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, media: previousMedia } : m)));
+      toast.error(error instanceof Error ? error.message : "Couldn't delete that photo.");
+    });
+  }
+
   return {
     replyTarget,
     setReplyTarget,
@@ -149,6 +165,7 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     handleEdit,
     handleEdited,
     handleVote,
+    handleDeleteMedia,
     scrollToMessage,
   };
 }

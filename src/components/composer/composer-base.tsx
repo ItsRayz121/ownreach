@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Sparkles, Send, Check } from "lucide-react";
+import Image from "next/image";
+import { Sparkles, Send, Check, ImagePlus, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSelectionFormatting } from "@/lib/hooks/use-selection-formatting";
@@ -9,19 +10,28 @@ import { useMagicPencilPaste } from "@/lib/hooks/use-magic-pencil-paste";
 import { SelectionToolbar } from "@/components/post/selection-toolbar";
 import { ComposerReplyBanner, type ComposerReplyTarget } from "@/components/messages/composer-reply-banner";
 import { ComposerEditBanner } from "@/components/messages/composer-edit-banner";
+import { uploadImage } from "@/lib/upload-client";
 import { toast } from "sonner";
 
 const MAX_LENGTH = 2000;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 export interface ComposerEditTarget {
   id: string;
   body: string;
 }
 
+export interface PendingAttachment {
+  url: string;
+  width: number;
+  height: number;
+  publicId: string;
+}
+
 export interface ComposerBaseProps<TMessage> {
-  onSend: (body: string, replyTarget: ComposerReplyTarget | null) => Promise<TMessage>;
+  onSend: (body: string, replyTarget: ComposerReplyTarget | null, attachment: PendingAttachment | null) => Promise<TMessage>;
   onSent: (message: TMessage, tempId?: string) => void;
-  onOptimisticSend?: (tempId: string, body: string, replyTarget: ComposerReplyTarget | null) => void;
+  onOptimisticSend?: (tempId: string, body: string, replyTarget: ComposerReplyTarget | null, attachment: PendingAttachment | null) => void;
   onSendError?: (tempId: string) => void;
   disabled?: boolean;
   disabledReason?: string;
@@ -50,10 +60,38 @@ export function ComposerBase<TMessage>({
   const [body, setBody] = useState("");
   const [syncedEditId, setSyncedEditId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const { anchor, close: closeToolbar, wrapSelection, clearFormatting } = useSelectionFormatting(textareaRef, setBody);
   const magicPencil = useMagicPencilPaste(textareaRef, setBody);
+
+  async function handlePickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are supported for now.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error("Images must be under 8MB.");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const result = await uploadImage(file, "messages");
+      setAttachment(result);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Image upload failed.");
+    } finally {
+      setIsUploading(false);
+    }
+  }
 
   // Loads the target's text into the draft exactly once per edit target
   // (render-phase state adjustment, not an effect — this is genuinely
@@ -78,9 +116,9 @@ export function ComposerBase<TMessage>({
 
   function handleSubmit() {
     const trimmed = body.trim();
-    if (!trimmed) return;
 
     if (editTarget && onEditSubmit) {
+      if (!trimmed) return;
       startTransition(async () => {
         try {
           await onEditSubmit(editTarget.id, trimmed);
@@ -93,19 +131,25 @@ export function ComposerBase<TMessage>({
       return;
     }
 
+    // A caption-less image is a valid send (WhatsApp/Telegram-style) — only
+    // reject when there's neither text nor an attached image.
+    if (!trimmed && !attachment) return;
+
     const target = replyTarget ?? null;
+    const sentAttachment = attachment;
     // Only generated when the caller wants optimistic UI, so the tempId
     // threads through onSent/onSendError for that caller and is undefined
     // (a no-op) for callers that don't.
     const tempId = onOptimisticSend ? crypto.randomUUID() : undefined;
-    if (tempId) onOptimisticSend?.(tempId, trimmed, target);
+    if (tempId) onOptimisticSend?.(tempId, trimmed, target, sentAttachment);
     startTransition(async () => {
       try {
-        const message = await onSend(trimmed, target);
+        const message = await onSend(trimmed, target, sentAttachment);
         // Only clear the draft once the send is confirmed — on failure
-        // (rate limit, request-cap, network blip) the typed text and reply
-        // target stay put so the user can retry without retyping.
+        // (rate limit, request-cap, network blip) the typed text, reply
+        // target, and attachment stay put so the user can retry without redoing them.
         setBody("");
+        setAttachment(null);
         onCancelReply?.();
         onSent(message, tempId);
       } catch (error) {
@@ -125,6 +169,21 @@ export function ComposerBase<TMessage>({
         <ComposerEditBanner onCancel={onCancelEdit} />
       ) : (
         replyTarget && onCancelReply && <ComposerReplyBanner target={replyTarget} onCancel={onCancelReply} />
+      )}
+      {attachment && !editTarget && (
+        <div className="flex items-center gap-2 border-b px-3 py-2">
+          <div className="relative size-14 shrink-0 overflow-hidden rounded-lg border">
+            <Image src={attachment.url} alt="" fill className="object-cover" />
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttachment(null)}
+            aria-label="Remove image"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       )}
       <div className="flex items-end gap-2 px-3 py-2.5">
         <div className="min-w-0 flex-1">
@@ -152,6 +211,22 @@ export function ComposerBase<TMessage>({
           />
           <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
         </div>
+        {!editTarget && (
+          <>
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isUploading || Boolean(attachment)}
+              aria-label="Attach an image"
+              title="Attach an image"
+            >
+              {isUploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+            </Button>
+          </>
+        )}
         {/* Poll/contact-share dialogs post standalone messages with no
             replyToMessageId support — hidden during a reply so creating one
             can't silently leave the pending reply banner attached to
@@ -169,7 +244,12 @@ export function ComposerBase<TMessage>({
             <Sparkles className="size-4" />
           </Button>
         )}
-        <Button size="icon" onClick={handleSubmit} disabled={isPending || !body.trim()} aria-label={editTarget ? "Save edit" : "Send"}>
+        <Button
+          size="icon"
+          onClick={handleSubmit}
+          disabled={isPending || isUploading || (!body.trim() && !attachment)}
+          aria-label={editTarget ? "Save edit" : "Send"}
+        >
           {editTarget ? <Check className="size-4" /> : <Send className="size-4" />}
         </Button>
       </div>

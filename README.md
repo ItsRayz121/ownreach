@@ -59,10 +59,11 @@ See `.env.example` for the full list with comments. Summary:
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | "Continue with Google" | Google Cloud Console → APIs & Services → Credentials. Redirect URI: `{APP_URL}/api/auth/google/callback` |
 | `TELEGRAM_BOT_TOKEN` / `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Telegram login | [@BotFather](https://t.me/BotFather), then `/setdomain` to your app's domain |
 | `NEXT_PUBLIC_APP_URL` | OAuth redirects, SIWE domain check | Your app's public URL, no trailing slash |
-| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Avatar/cover/post image uploads | [Cloudinary console](https://console.cloudinary.com), free tier |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Avatar/cover/post/chat image uploads | [Cloudinary console](https://console.cloudinary.com), free tier |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Rate limiting writes and login attempts | [Upstash console](https://console.upstash.com), free tier — without these, requests simply aren't throttled |
 | `ABLY_API_KEY` | Live delivery for DMs and notifications | [Ably dashboard](https://ably.com/accounts), free tier — without this, messages/notifications still work via refetch, just not instantly |
 | `RESEND_API_KEY` / `EMAIL_FROM` | "Continue with email" (passwordless magic link) | [Resend](https://resend.com) → API Keys, free tier — `EMAIL_FROM` must be a sender verified on your Resend domain |
+| `CRON_SECRET` | Purging expired chat photos (`/api/cron/purge-expired-media`, scheduled in `vercel.json`) | Any random string, same as `AUTH_SECRET` — Vercel Cron sends it automatically as a bearer token when the var is named exactly this |
 
 Wallet sign-in (SIWE) needs no server credentials — it only needs a browser
 wallet extension (MetaMask, etc.) on the visitor's side.
