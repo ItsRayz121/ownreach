@@ -41,11 +41,13 @@ export function AppShell({
         canPost={canPost}
       />
       <div className="flex min-h-dvh w-full flex-1 flex-col md:border-x">
-        <MobileTopBar userId={userId} username={username} unreadNotifications={unreadNotifications} isAdmin={isAdmin} />
+        <MobileTopBar username={username} isAdmin={isAdmin} />
         <main className="flex-1 overscroll-y-contain pb-mobile-nav md:pb-0">{children}</main>
       </div>
       <MobileBottomNav
+        userId={userId}
         username={username}
+        unreadNotifications={unreadNotifications}
         unreadMessages={unreadMessages}
         unreadGroups={unreadGroups}
         unreadChannels={unreadChannels}

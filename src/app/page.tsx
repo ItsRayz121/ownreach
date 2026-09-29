@@ -6,7 +6,7 @@ import { verifySession } from "@/lib/auth/session";
 
 export default async function LandingPage() {
   const session = await verifySession();
-  if (session) redirect("/home");
+  if (session) redirect("/messages");
 
   return (
     <div className="flex min-h-dvh flex-col">

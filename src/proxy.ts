@@ -19,7 +19,7 @@ export function proxy(req: NextRequest) {
   }
 
   if (AUTH_ONLY_ROUTES.includes(path) && hasSessionCookie) {
-    return NextResponse.redirect(new URL("/home", req.nextUrl.origin));
+    return NextResponse.redirect(new URL("/messages", req.nextUrl.origin));
   }
 
   return NextResponse.next();

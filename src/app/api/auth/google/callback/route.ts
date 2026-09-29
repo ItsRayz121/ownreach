@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     });
 
     await createSession(userId);
-    return NextResponse.redirect(new URL("/home", req.nextUrl.origin));
+    return NextResponse.redirect(new URL("/messages", req.nextUrl.origin));
   } catch (error) {
     if (error instanceof ProviderAlreadyLinkedError) {
       return redirectWithError(req, "already_linked");

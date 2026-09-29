@@ -2,38 +2,38 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Reply, Pencil } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
-import { RichText } from "@/components/post/rich-text";
-import { formatRelativeTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import {
   markConversationRead,
   loadOlderMessages,
   markMessagesDelivered,
   toggleMessageReaction,
+  deleteMessage,
   deleteMessageMedia,
   acceptMessageRequest,
   declineMessageRequest,
 } from "@/lib/actions/messages";
 import { votePoll } from "@/lib/actions/polls";
 import { MESSAGE_REQUEST_CAP } from "@/lib/message-requests";
+import { isWithinEditWindow } from "@/lib/message-edit";
 import { applyReactionEvent } from "@/lib/reactions";
 import { applyPollVoteEvent } from "@/lib/poll-votes";
 import { useAblyChannel } from "@/lib/hooks/use-ably-channel";
 import { useMessageInteractions } from "@/lib/hooks/use-message-interactions";
+import { ChatViewport } from "./chat-viewport";
 import { MessageComposer } from "./message-composer";
+import { MessageBubble } from "./message-bubble";
+import { MessageActionsSheet, type MessageActions } from "./message-actions-sheet";
+import { MessagePressTarget } from "./message-press-target";
 import { MessageReactions } from "./message-reactions";
 import { MessageStatusTicks, type MessageStatus } from "./message-status-ticks";
 import { QuoteSelectionPopup } from "./quote-selection-popup";
-import { ReplyPreview } from "./reply-preview";
-import { ContactMessageCard } from "./contact-message-card";
-import { PollMessageCard } from "./poll-message-card";
-import { MediaMessageCard } from "./media-message-card";
 import type { ComposerReplyTarget } from "./composer-reply-banner";
 import type { PendingAttachment } from "@/components/composer/composer-base";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import type { MessageItem } from "@/lib/data/messages";
 
 interface OtherParticipant {
@@ -76,6 +76,10 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     setReplyTarget,
     editTarget,
     setEditTarget,
+    menuMessageId,
+    menuOpen,
+    setMenuOpen,
+    openMenu,
     clientId,
     handleToggleReaction,
     startReply,
@@ -84,6 +88,9 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     handleEdited,
     handleVote,
     handleDeleteMedia,
+    handleCopy,
+    handleDelete,
+    removeMessageLocally,
     scrollToMessage,
   } = useMessageInteractions({
     messages,
@@ -93,6 +100,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     toggleReaction: toggleMessageReaction,
     votePoll,
     deleteMedia: deleteMessageMedia,
+    deleteMessage,
     resolveSenderName: senderName,
   });
 
@@ -182,6 +190,8 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, media: { url: null, width: null, height: null, removed: true } } : m)));
   });
 
+  useAblyChannel<{ messageId: string }>(`conversation:${conversationId}`, "deleted", (data) => removeMessageLocally(data.messageId));
+
   useAblyChannel<{ userId: string; readAt: string }>(`conversation:${conversationId}`, "read", (data) => {
     if (data.userId !== other?.userId) return;
     setOtherLastReadAt(new Date(data.readAt));
@@ -242,27 +252,48 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
   const composerDisabledReason =
     requestStatus === "declined" ? "This message request was declined." : "Your message request is limited until they accept.";
 
+  // Only what this viewer is actually allowed to do with the message, so the
+  // sheet never shows a button that would just fail.
+  function actionsFor(m: ThreadMessage): MessageActions {
+    const mine = m.senderId === viewerId;
+    const editable = mine && !composerDisabled && !m.poll && !m.sharedContact && isWithinEditWindow(m.createdAt);
+    return {
+      activeEmoji: m.reactions.find((r) => r.userId === viewerId)?.emoji ?? null,
+      onReact: (emoji) => handleToggleReaction(m.id, emoji),
+      onReply: composerDisabled ? undefined : () => startReply(m),
+      onCopy: m.body.trim() ? () => void handleCopy(m) : undefined,
+      onEdit: editable ? () => handleEdit(m) : undefined,
+      onDelete: mine ? () => handleDelete(m.id) : undefined,
+    };
+  }
+
+  const menuMessage = menuMessageId ? messages.find((m) => m.id === menuMessageId) : undefined;
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="bg-background/95 sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80">
-        <Link href="/messages" className="text-muted-foreground hover:text-foreground md:hidden">
+    <ChatViewport>
+      <header className="flex shrink-0 items-center gap-1 border-b px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:px-4 md:pt-2">
+        <Link
+          href="/messages"
+          aria-label="Back to chats"
+          className="hover:bg-accent/60 flex size-10 shrink-0 items-center justify-center rounded-full md:hidden"
+        >
           <ArrowLeft className="size-5" />
         </Link>
         {other ? (
-          <Link href={`/${other.username}`} className="flex items-center gap-2.5">
-            <UserAvatar src={other.avatarUrl} name={other.displayName} className="size-8" />
-            <span className="flex flex-col leading-tight">
-              <span className="font-semibold">{other.displayName}</span>
-              <span className="text-muted-foreground text-xs">@{other.username}</span>
+          <Link href={`/${other.username}`} className="flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-2">
+            <UserAvatar src={other.avatarUrl} name={other.displayName} className="size-10 shrink-0" />
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="truncate text-[15px] font-semibold">{other.displayName}</span>
+              <span className="text-muted-foreground truncate text-xs">@{other.username}</span>
             </span>
           </Link>
         ) : (
-          <span className="font-semibold">Unknown user</span>
+          <span className="px-2 font-semibold">Unknown user</span>
         )}
-      </div>
+      </header>
 
       {requestStatus === "pending" && !isInitiator && (
-        <div className="bg-accent/40 flex items-center justify-between gap-2 border-b px-4 py-2.5 text-sm">
+        <div className="bg-accent/40 flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5 text-sm">
           <span>{other?.displayName ?? "This person"} wants to send you messages.</span>
           <div className="flex gap-2">
             <Button
@@ -302,12 +333,12 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         </div>
       )}
       {requestStatus === "pending" && isInitiator && (
-        <div className="text-muted-foreground border-b px-4 py-2 text-center text-xs">
+        <div className="text-muted-foreground shrink-0 border-b px-4 py-2 text-center text-xs">
           Message request sent · {initiatorSentCount}/{MESSAGE_REQUEST_CAP} messages used until they accept
         </div>
       )}
 
-      <div ref={listRef} className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4">
+      <div ref={listRef} data-chat-list className="relative min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 py-3">
         {!composerDisabled && <QuoteSelectionPopup containerRef={listRef} onQuote={handleQuote} />}
         {nextCursor && (
           <div className="pb-2 text-center">
@@ -323,89 +354,20 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         )}
         {messages.map((m) => {
           const mine = m.senderId === viewerId;
-          const editable = mine && !m.poll && !m.sharedContact && !m.pending;
           return (
-            <div key={m.id} data-message-id={m.id} className={cn("group flex", mine ? "justify-end" : "justify-start")}>
-              <div className="flex max-w-[75%] items-end gap-1">
-                {!mine && !composerDisabled && (
-                  <button
-                    type="button"
-                    onClick={() => startReply(m)}
-                    aria-label="Reply"
-                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                  >
-                    <Reply className="size-3.5" />
-                  </button>
-                )}
-                <div className="min-w-0">
-                  <div
-                    className={cn(
-                      "rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
-                      mine ? "bg-primary text-primary-foreground" : "bg-muted",
-                      (m.poll || m.sharedContact || m.media) && "px-2 py-1.5"
-                    )}
-                  >
-                    {m.replyTo && (
-                      <ReplyPreview
-                        senderName={senderName(m.replyTo.senderId)}
-                        text={m.replyExcerpt ?? m.replyTo.body.slice(0, 120)}
-                        mine={mine}
-                        onClick={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
-                      />
-                    )}
-                    {m.poll ? (
-                      <PollMessageCard poll={m.poll} mine={mine} onVote={(optionId) => handleVote(m.poll!.id, optionId)} />
-                    ) : m.sharedContact ? (
-                      <ContactMessageCard contact={m.sharedContact} mine={mine} />
-                    ) : m.media ? (
-                      <div className="flex flex-col gap-1.5">
-                        <MediaMessageCard
-                          media={m.media}
-                          mine={mine}
-                          onDelete={mine && !m.media.removed ? () => handleDeleteMedia(m.id) : undefined}
-                        />
-                        {m.body && (
-                          <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
-                            <RichText text={m.body} />
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      // Suppresses the native OS text-selection menu/callout on
-                      // message text only (see QuoteSelectionPopup's in-app
-                      // Copy/Quote replacement) — scoped here, not on the
-                      // whole list, so it doesn't also swallow right-click on
-                      // poll/contact-card links elsewhere in the bubble.
-                      <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
-                        <RichText text={m.body} />
-                      </span>
-                    )}
-                    <div
-                      className={cn(
-                        "mt-0.5 flex items-center gap-1 text-[10px]",
-                        mine ? "text-primary-foreground/70" : "text-muted-foreground"
-                      )}
-                    >
-                      <span>{formatRelativeTime(m.createdAt)}</span>
-                      {m.editedAt && <span>· edited</span>}
-                      {mine && <MessageStatusTicks status={tickStatus(m)} />}
-                    </div>
-                  </div>
-                  <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
-                </div>
-                {mine && !composerDisabled && (
-                  <div className="mb-1 flex shrink-0 items-center gap-1.5 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                    {editable && (
-                      <button type="button" onClick={() => handleEdit(m)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
-                        <Pencil className="size-3.5" />
-                      </button>
-                    )}
-                    <button type="button" onClick={() => startReply(m)} aria-label="Reply" className="text-muted-foreground hover:text-foreground">
-                      <Reply className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
+            <div key={m.id} data-message-id={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
+              <MessagePressTarget mine={mine} disabled={m.pending} onOpenMenu={() => openMenu(m.id)} className="max-w-[88%] min-w-0 md:max-w-[75%]">
+                <MessageBubble
+                  message={m}
+                  mine={mine}
+                  replySenderName={m.replyTo ? senderName(m.replyTo.senderId) : undefined}
+                  onJumpToReply={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
+                  onVote={m.poll ? (optionId) => handleVote(m.poll!.id, optionId) : undefined}
+                  onDeleteMedia={mine && m.media && !m.media.removed ? () => handleDeleteMedia(m.id) : undefined}
+                  meta={mine && <MessageStatusTicks status={tickStatus(m)} />}
+                />
+                <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
+              </MessagePressTarget>
             </div>
           );
         })}
@@ -425,6 +387,8 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
         onCancelEdit={() => setEditTarget(null)}
         onEdited={handleEdited}
       />
-    </div>
+
+      <MessageActionsSheet open={menuOpen && Boolean(menuMessage)} onOpenChange={setMenuOpen} actions={menuMessage ? actionsFor(menuMessage) : {}} />
+    </ChatViewport>
   );
 }

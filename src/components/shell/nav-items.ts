@@ -13,6 +13,8 @@ export interface NavUnread {
   messages?: number;
   groups?: boolean;
   channels?: boolean;
+  /** Unread notifications — shown on the Profile tab on phones, where notifications now live. */
+  notifications?: boolean;
 }
 
 export function buildNavItems(username?: string, unread: NavUnread = {}, canPost = false): NavItem[] {
@@ -21,7 +23,7 @@ export function buildNavItems(username?: string, unread: NavUnread = {}, canPost
     ...(username ? [{ label: "Groups", href: "/communities?kind=group", icon: Users, badge: unread.groups }] : []),
     ...(canPost ? [{ label: "Create", href: "/home?compose=1", icon: PlusSquare }] : []),
     ...(username ? [{ label: "Channels", href: "/communities?kind=channel", icon: Radio, badge: unread.channels }] : []),
-    { label: "Profile", href: username ? `/${username}` : "/login", icon: User },
+    { label: "Profile", href: username ? `/${username}` : "/login", icon: User, badge: unread.notifications },
   ];
 }
 

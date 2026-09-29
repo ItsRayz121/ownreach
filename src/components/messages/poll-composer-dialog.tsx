@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { BarChart2, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,19 +14,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
 const MAX_OPTIONS = 10;
 
 interface PollComposerDialogProps<TMessage> {
-  disabled?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onCreate: (question: string, options: string[], allowMultiple: boolean) => Promise<TMessage>;
   onCreated: (message: TMessage) => void;
 }
 
-export function PollComposerDialog<TMessage>({ disabled, onCreate, onCreated }: PollComposerDialogProps<TMessage>) {
-  const [open, setOpen] = useState(false);
+// Opened from the composer's + menu, which owns the `open` state.
+export function PollComposerDialog<TMessage>({ open, onOpenChange, onCreate, onCreated }: PollComposerDialogProps<TMessage>) {
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [allowMultiple, setAllowMultiple] = useState(false);
@@ -59,7 +59,7 @@ export function PollComposerDialog<TMessage>({ disabled, onCreate, onCreated }: 
       try {
         const message = await onCreate(question.trim(), trimmedOptions, allowMultiple);
         onCreated(message);
-        setOpen(false);
+        onOpenChange(false);
         reset();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Couldn't create that poll.");
@@ -67,18 +67,9 @@ export function PollComposerDialog<TMessage>({ disabled, onCreate, onCreated }: 
     });
   }
 
-  if (disabled) return null;
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={<button type="button" className="text-muted-foreground hover:text-foreground shrink-0" />}
-        aria-label="Create a poll"
-        title="Create a poll"
-      >
-        <BarChart2 className="size-4.5" />
-      </DialogTrigger>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create a poll</DialogTitle>
           <DialogDescription>Ask a question and let people vote right in the chat.</DialogDescription>

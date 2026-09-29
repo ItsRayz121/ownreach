@@ -11,6 +11,7 @@ import { getMembership, getChannel, listChannelMessages, recordChannelMessageVie
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { isCommunityManager } from "@/lib/community-roles";
+import { isWithinEditWindow, EDIT_WINDOW_EXPIRED_MESSAGE } from "@/lib/message-edit";
 import { isMessageReactionEmoji } from "@/lib/reactions";
 import { toggleReactionCore } from "@/lib/actions/reaction-toggle";
 import { mediaExpiryDate } from "@/lib/media-retention";
@@ -273,6 +274,7 @@ export async function editChannelMessage(input: z.infer<typeof editChannelMessag
       senderId: channelMessages.senderId,
       pollId: channelMessages.pollId,
       sharedContactId: channelMessages.sharedContactId,
+      createdAt: channelMessages.createdAt,
     })
     .from(channelMessages)
     .where(eq(channelMessages.id, parsed.messageId))
@@ -286,6 +288,14 @@ export async function editChannelMessage(input: z.infer<typeof editChannelMessag
   if (!channel) throw new Error("Channel not found.");
   const membership = await getMembership(channel.communityId, session.userId);
   if (!membership) throw new Error("You're not a member of this community.");
+
+  if (channel.kind === "channel") {
+    // Broadcast channels: only a current manager may edit (a since-demoted
+    // admin can no longer touch their old posts), with no time limit.
+    if (!isCommunityManager(membership.role)) throw new Error("You don't have permission to do that.");
+  } else if (!isWithinEditWindow(existing.createdAt)) {
+    throw new Error(EDIT_WINDOW_EXPIRED_MESSAGE);
+  }
 
   const editedAt = new Date();
   await db.update(channelMessages).set({ body: parsed.body, editedAt }).where(eq(channelMessages.id, parsed.messageId));
@@ -428,6 +438,43 @@ export async function createChannelPoll(input: z.infer<typeof createChannelPollS
     poll: pollPayload,
     media: null,
   };
+}
+
+/**
+ * Deletes a group/channel message for everyone. The sender can delete their
+ * own; community managers (owner/admin) can delete anyone's. See deleteMessage
+ * (lib/actions/messages.ts) for what's cleaned up alongside the row.
+ */
+export async function deleteChannelMessage(messageId: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("channel:message:delete", session.userId, { limit: 60, window: "10 m" });
+
+  const [existing] = await db
+    .select({ channelId: channelMessages.channelId, senderId: channelMessages.senderId, pollId: channelMessages.pollId, mediaId: channelMessages.mediaId })
+    .from(channelMessages)
+    .where(eq(channelMessages.id, messageId))
+    .limit(1);
+  if (!existing) throw new Error("Message not found.");
+
+  const channel = await getChannel(existing.channelId);
+  const membership = channel ? await getMembership(channel.communityId, session.userId) : null;
+  if (!membership) throw new Error("Message not found.");
+  if (existing.senderId !== session.userId && !isCommunityManager(membership.role)) {
+    throw new Error("You don't have permission to delete that message.");
+  }
+
+  const [media] = existing.mediaId
+    ? await db.select({ publicId: messageMedia.publicId }).from(messageMedia).where(eq(messageMedia.id, existing.mediaId)).limit(1)
+    : [];
+
+  await db.delete(channelMessages).where(eq(channelMessages.id, messageId));
+  if (existing.pollId) await db.delete(messagePolls).where(eq(messagePolls.id, existing.pollId));
+  if (existing.mediaId) await db.delete(messageMedia).where(eq(messageMedia.id, existing.mediaId));
+  if (media?.publicId) await cloudinary.uploader.destroy(media.publicId).catch(() => {});
+
+  await publishToChannel(`channel:${existing.channelId}`, "deleted", { messageId });
+  revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
 }
 
 /** See deleteMessageMedia (lib/actions/messages.ts) — same contract, community-manager-or-sender authority instead of admin-or-sender. */

@@ -6,7 +6,8 @@ import { listConversations } from "@/lib/data/messages";
 import { searchProfiles } from "@/lib/data/profiles";
 import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState } from "@/components/empty-state";
-import { HeaderSearchToggle } from "@/components/header-search-toggle";
+import { ListHeader, SearchField, FilterChipRow, filterChipClassName, ChipCount } from "@/components/shell/list-header";
+import { NewChatButton } from "@/components/messages/new-chat-button";
 import { StartConversationRow } from "@/components/messages/start-conversation-row";
 import { MessageRequestRow } from "@/components/messages/message-request-row";
 import { formatRelativeTime } from "@/lib/format";
@@ -35,26 +36,31 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
   ]);
   const { matches: results, suggestions } = profileResults;
 
-  const requests = conversations.filter((c) => c.status === "pending" && c.initiatorId !== session.userId);
+  const needle = query?.replace(/^@/, "").toLowerCase();
+  const matchesQuery = (c: (typeof conversations)[number]) =>
+    !needle || Boolean(c.other && (c.other.displayName.toLowerCase().includes(needle) || c.other.username.toLowerCase().includes(needle)));
+
+  const requests = conversations.filter((c) => c.status === "pending" && c.initiatorId !== session.userId && matchesQuery(c));
   const visibleConversations = conversations.filter((c) => {
     if (c.status === "pending" && c.initiatorId !== session.userId) return false; // shown under Requests instead
-    if (filter === "unread") return c.unread;
-    return true;
+    if (filter === "unread" && !c.unread) return false;
+    return matchesQuery(c);
   });
   const list = filter === "requests" ? requests : visibleConversations;
 
   return (
     <div>
-      <div className="bg-background/95 sticky top-0 z-20 flex items-center justify-between gap-2 border-b px-4 py-3.5 backdrop-blur supports-backdrop-filter:bg-background/80">
-        <h1 className="text-lg font-semibold">Chats</h1>
-        <HeaderSearchToggle action="/messages" name="q" placeholder="Search @username" defaultValue={query} />
-      </div>
-
-      <div className="flex gap-4 border-b px-4">
-        <FilterTab href="/messages" active={filter === "all"} label="All" />
-        <FilterTab href="/messages?filter=unread" active={filter === "unread"} label="Unread" />
-        <FilterTab href="/messages?filter=requests" active={filter === "requests"} label="Requests" count={requests.length} />
-      </div>
+      <ListHeader title="Chats" action={<NewChatButton />}>
+        <form action="/messages" role="search">
+          {filter !== "all" && <input type="hidden" name="filter" value={filter} />}
+          <SearchField name="q" defaultValue={query} placeholder="Search chats or @username" aria-label="Search chats" />
+        </form>
+        <FilterChipRow>
+          <FilterChip href={chipHref("all", query)} active={filter === "all"} label="All" />
+          <FilterChip href={chipHref("unread", query)} active={filter === "unread"} label="Unread" />
+          <FilterChip href={chipHref("requests", query)} active={filter === "requests"} label="Requests" count={requests.length} />
+        </FilterChipRow>
+      </ListHeader>
 
       {query && (
         <div className="border-b">
@@ -94,15 +100,22 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
       )}
 
       {list.length === 0 ? (
-        <EmptyState
-          icon={MessageCircle}
-          title={filter === "requests" ? "No message requests" : "No messages yet"}
-          description={
-            filter === "requests"
-              ? "Requests from people you don't follow back will show up here."
-              : "Search a username above, or visit a profile and tap Message to start a conversation."
-          }
-        />
+        query ? (
+          // The People results above already cover "start a new chat" for this query.
+          <p className="text-muted-foreground px-4 py-8 text-center text-sm">No chats match &quot;{query}&quot;.</p>
+        ) : (
+          <EmptyState
+            icon={MessageCircle}
+            title={filter === "requests" ? "No message requests" : filter === "unread" ? "You're all caught up" : "No messages yet"}
+            description={
+              filter === "requests"
+                ? "Requests from people you don't follow back will show up here."
+                : filter === "unread"
+                  ? "Chats with unread messages will show up here."
+                  : "Tap + to find someone by name or @username, or visit a profile and tap Message."
+            }
+          />
+        )
       ) : filter === "requests" ? (
         list.map((c) => (
           <MessageRequestRow
@@ -148,21 +161,19 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
   );
 }
 
-function FilterTab({ href, active, label, count }: { href: string; active: boolean; label: string; count?: number }) {
+function chipHref(filter: Filter, query?: string) {
+  const params = new URLSearchParams();
+  if (filter !== "all") params.set("filter", filter);
+  if (query) params.set("q", query);
+  const qs = params.toString();
+  return qs ? `/messages?${qs}` : "/messages";
+}
+
+function FilterChip({ href, active, label, count }: { href: string; active: boolean; label: string; count?: number }) {
   return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center gap-1.5 border-b-2 py-2.5 text-sm font-medium transition-colors",
-        active ? "border-primary text-foreground" : "text-muted-foreground border-transparent hover:text-foreground"
-      )}
-    >
+    <Link href={href} className={filterChipClassName(active)} aria-current={active ? "true" : undefined}>
       {label}
-      {Boolean(count) && (
-        <span className="bg-primary text-primary-foreground flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold">
-          {count}
-        </span>
-      )}
+      {Boolean(count) && <ChipCount count={count!} active={active} />}
     </Link>
   );
 }

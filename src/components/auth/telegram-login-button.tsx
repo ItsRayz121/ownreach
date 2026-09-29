@@ -39,7 +39,7 @@ export function TelegramLoginButton({ link }: TelegramLoginButtonProps) {
 
       if (data.status === "done") {
         stopPolling();
-        router.push(data.redirect ?? "/home");
+        router.push(data.redirect ?? "/messages");
         router.refresh();
       } else if (data.status === "error") {
         stopPolling();

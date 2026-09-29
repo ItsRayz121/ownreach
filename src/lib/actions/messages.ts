@@ -17,6 +17,7 @@ import { mediaExpiryDate } from "@/lib/media-retention";
 import { assertOwnMessageMedia } from "@/lib/media-ownership";
 import { cloudinary } from "@/lib/cloudinary";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { isWithinEditWindow, EDIT_WINDOW_EXPIRED_MESSAGE } from "@/lib/message-edit";
 import type { MediaSummary } from "@/lib/data/media";
 
 async function isMutualFollow(userA: string, userB: string): Promise<boolean> {
@@ -348,12 +349,19 @@ export async function editMessage(input: z.infer<typeof editMessageSchema>) {
   const parsed = editMessageSchema.parse(input);
 
   const [existing] = await db
-    .select({ conversationId: messages.conversationId, senderId: messages.senderId, pollId: messages.pollId, sharedContactId: messages.sharedContactId })
+    .select({
+      conversationId: messages.conversationId,
+      senderId: messages.senderId,
+      pollId: messages.pollId,
+      sharedContactId: messages.sharedContactId,
+      createdAt: messages.createdAt,
+    })
     .from(messages)
     .where(eq(messages.id, parsed.messageId))
     .limit(1);
   if (!existing || existing.senderId !== session.userId) throw new Error("Message not found.");
   if (existing.pollId || existing.sharedContactId) throw new Error("That message can't be edited.");
+  if (!isWithinEditWindow(existing.createdAt)) throw new Error(EDIT_WINDOW_EXPIRED_MESSAGE);
 
   const editedAt = new Date();
   await db.update(messages).set({ body: parsed.body, editedAt }).where(eq(messages.id, parsed.messageId));
@@ -366,6 +374,39 @@ export async function editMessage(input: z.infer<typeof editMessageSchema>) {
 
   revalidatePath(`/messages/${existing.conversationId}`);
   return { body: parsed.body, editedAt };
+}
+
+/**
+ * Deletes a message for everyone in the conversation. Only the sender can —
+ * a site admin has no business removing someone's private DM. Reactions
+ * cascade; replies keep their quoted excerpt (reply_to_message_id is
+ * "set null"); an attached poll or photo is cleaned up with the message.
+ */
+export async function deleteMessage(messageId: string) {
+  const session = await verifySession();
+  if (!session) throw new Error("You must be signed in.");
+  await checkRateLimit("message:delete", session.userId, { limit: 60, window: "10 m" });
+
+  const [existing] = await db
+    .select({ conversationId: messages.conversationId, senderId: messages.senderId, pollId: messages.pollId, mediaId: messages.mediaId })
+    .from(messages)
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  if (!existing || existing.senderId !== session.userId) throw new Error("Message not found.");
+
+  const [media] = existing.mediaId
+    ? await db.select({ publicId: messageMedia.publicId }).from(messageMedia).where(eq(messageMedia.id, existing.mediaId)).limit(1)
+    : [];
+
+  await db.delete(messages).where(eq(messages.id, messageId));
+  if (existing.pollId) await db.delete(messagePolls).where(eq(messagePolls.id, existing.pollId));
+  if (existing.mediaId) await db.delete(messageMedia).where(eq(messageMedia.id, existing.mediaId));
+  // Awaited for the same serverless reason as deleteMessageMedia below.
+  if (media?.publicId) await cloudinary.uploader.destroy(media.publicId).catch(() => {});
+
+  await publishToChannel(`conversation:${existing.conversationId}`, "deleted", { messageId });
+  revalidatePath(`/messages/${existing.conversationId}`);
+  revalidatePath("/messages");
 }
 
 /**

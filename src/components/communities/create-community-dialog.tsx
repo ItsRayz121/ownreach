@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { headerActionClassName } from "@/components/shell/list-header";
 import {
   Dialog,
   DialogContent,
@@ -88,15 +89,10 @@ export function CreateCommunityDialog({ defaultKind = "group", iconOnly = false 
     <Dialog open={open} onOpenChange={setOpen}>
       {iconOnly ? (
         <DialogTrigger
-          render={
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground hover:bg-accent/60 shrink-0 rounded-full p-1.5 transition-colors"
-            />
-          }
+          render={<button type="button" className={headerActionClassName} />}
           aria-label={defaultKind === "channel" ? "Create channel" : "Create group"}
         >
-          <Plus className="size-4.5" />
+          <Plus className="size-5" />
         </DialogTrigger>
       ) : (
         <DialogTrigger render={<Button className="gap-2" />}>

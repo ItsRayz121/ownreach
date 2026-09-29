@@ -72,7 +72,7 @@ export async function signupWithPassword(input: { email: string; password: strin
   }
 
   await createSession(userId);
-  redirect("/home");
+  redirect("/messages");
 }
 
 export async function loginWithPassword(input: { email: string; password: string }): Promise<ActionResult> {
@@ -109,7 +109,7 @@ export async function loginWithPassword(input: { email: string; password: string
   if (!user || user.status === "suspended") return { ok: false, error: GENERIC_LOGIN_ERROR };
 
   await createSession(account.userId);
-  redirect("/home");
+  redirect("/messages");
 }
 
 export async function requestPasswordReset(input: { email: string }): Promise<ActionResult> {
@@ -173,7 +173,7 @@ export async function resetPassword(input: { token: string; password: string }):
 
   await destroyAllSessionsForUser(claimed.userId);
   await createSession(claimed.userId);
-  redirect("/home");
+  redirect("/messages");
 }
 
 /** For OAuth/Telegram/wallet-only accounts adding password sign-in for the first time. */

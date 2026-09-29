@@ -1,9 +1,8 @@
 "use client";
 
 import { ComposerBase, type ComposerEditTarget, type PendingAttachment } from "@/components/composer/composer-base";
+import { useComposerExtras } from "@/components/composer/composer-extras";
 import { sendMessage, createPoll, shareContact, editMessage } from "@/lib/actions/messages";
-import { PollComposerDialog } from "./poll-composer-dialog";
-import { ContactPickerDialog } from "./contact-picker-dialog";
 import type { ComposerReplyTarget } from "./composer-reply-banner";
 import type { MessageItem } from "@/lib/data/messages";
 
@@ -22,9 +21,16 @@ interface MessageComposerProps {
 }
 
 export function MessageComposer({ conversationId, editTarget, onCancelEdit, onEdited, ...props }: MessageComposerProps) {
+  const extras = useComposerExtras<MessageItem>({
+    createPoll: (question, options, allowMultiple) => createPoll({ conversationId, question, options, allowMultiple }),
+    shareContact: (userId) => shareContact(conversationId, userId),
+    onSent: props.onSent,
+  });
+
   return (
     <ComposerBase<MessageItem>
       {...props}
+      {...extras}
       editTarget={editTarget}
       onCancelEdit={onCancelEdit}
       onEditSubmit={async (messageId, body) => {
@@ -42,15 +48,6 @@ export function MessageComposer({ conversationId, editTarget, onCancelEdit, onEd
           mediaWidth: attachment?.width,
           mediaHeight: attachment?.height,
         })
-      }
-      extraActions={
-        <>
-          <PollComposerDialog
-            onCreate={(question, options, allowMultiple) => createPoll({ conversationId, question, options, allowMultiple })}
-            onCreated={props.onSent}
-          />
-          <ContactPickerDialog onShare={(userId) => shareContact(conversationId, userId)} onShared={props.onSent} />
-        </>
       }
     />
   );

@@ -103,3 +103,20 @@ function renderLine(line: string, lineIndex: number) {
 
   return nodes;
 }
+
+/** The text as a reader sees it — formatting markers stripped, escapes resolved, links as "text (url)". Used for the "Copy message" action. */
+export function richTextToPlain(text: string): string {
+  return text.replace(new RegExp(TOKEN_RE.source, "g"), (full, bold, italic, underline, strike, code, link, escaped) => {
+    if (bold) return bold.slice(2, -2);
+    if (italic) return italic.slice(1, -1);
+    if (underline) return underline.slice(2, -2);
+    if (strike) return strike.slice(2, -2);
+    if (code) return code.slice(1, -1);
+    if (link) {
+      const parsed = LINK_RE.exec(link);
+      return parsed && /^https?:\/\//.test(parsed[2]) ? `${parsed[1]} (${parsed[2]})` : full;
+    }
+    if (escaped) return escaped.slice(1);
+    return full;
+  });
+}

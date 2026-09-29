@@ -2,6 +2,8 @@
 
 import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
+import { copyToClipboard } from "@/lib/clipboard";
+import { richTextToPlain } from "@/components/post/rich-text";
 import { applyReactionEvent, type ReactableItem } from "@/lib/reactions";
 import { applyPollVoteEvent } from "@/lib/poll-votes";
 import type { ComposerReplyTarget } from "@/components/messages/composer-reply-banner";
@@ -16,6 +18,7 @@ interface InteractivePollOption {
 
 interface InteractiveMessage extends ReactableItem {
   senderId: string;
+  createdAt: Date;
   body: string;
   editedAt: Date | null;
   poll?: { id: string; question: string; allowMultiple: boolean; options: InteractivePollOption[] } | null;
@@ -38,14 +41,16 @@ interface UseMessageInteractionsOptions<T extends InteractiveMessage> {
   toggleReaction: (messageId: string, emoji: string) => Promise<unknown>;
   votePoll: (pollId: string, optionId: string, clientId: string) => Promise<{ added: string[]; removed: string[] }>;
   deleteMedia: (messageId: string) => Promise<unknown>;
+  deleteMessage: (messageId: string) => Promise<unknown>;
   resolveSenderName: (senderId: string) => string;
 }
 
 /**
- * Reply/quote/reaction/edit/poll-vote handling shared between the DM thread
- * and the group/channel thread — the two surfaces render differently, but
- * these behave identically over whatever message shape each surface uses.
- * Reply and edit are mutually exclusive (starting one clears the other).
+ * Reply/quote/reaction/edit/delete/copy/poll-vote handling shared between the
+ * DM thread and the group/channel thread — the two surfaces render
+ * differently, but these behave identically over whatever message shape each
+ * surface uses. Reply and edit are mutually exclusive (starting one clears
+ * the other).
  */
 export function useMessageInteractions<T extends InteractiveMessage>({
   messages,
@@ -55,10 +60,17 @@ export function useMessageInteractions<T extends InteractiveMessage>({
   toggleReaction,
   votePoll,
   deleteMedia,
+  deleteMessage,
   resolveSenderName,
 }: UseMessageInteractionsOptions<T>) {
   const [replyTarget, setReplyTarget] = useState<ComposerReplyTarget | null>(null);
   const [editTarget, setEditTarget] = useState<ComposerEditTarget | null>(null);
+  // Which message the long-press/right-click menu is for. Holds the id, not
+  // the message, so the menu always reads the live (reactions, edits) copy;
+  // the id outlives `menuOpen` so the sheet keeps its content while it
+  // animates closed.
+  const [menuMessageId, setMenuMessageId] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   // Identifies this tab's votes in the realtime "poll-vote" echo, so only the
   // exact tab that cast a vote skips re-applying it — a second open tab for
   // the same account still needs the broadcast (see handleVote/thread's
@@ -137,6 +149,41 @@ export function useMessageInteractions<T extends InteractiveMessage>({
       });
   }
 
+  async function handleCopy(message: T) {
+    const text = richTextToPlain(message.body).trim();
+    if (!text) return;
+    if (await copyToClipboard(text)) toast.success("Copied");
+    else toast.error("Couldn't copy that message.");
+  }
+
+  function openMenu(messageId: string) {
+    setMenuMessageId(messageId);
+    setMenuOpen(true);
+  }
+
+  // Removes a message from the local list (own delete, or the realtime echo of
+  // someone else's) and drops any reply/edit draft that pointed at it.
+  function removeMessageLocally(messageId: string) {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    setReplyTarget((target) => (target?.messageId === messageId ? null : target));
+    setEditTarget((target) => (target?.id === messageId ? null : target));
+    if (messageId === menuMessageId) setMenuOpen(false);
+  }
+
+  function handleDelete(messageId: string) {
+    const removed = messages.find((m) => m.id === messageId);
+    if (!removed) return;
+    removeMessageLocally(messageId);
+    deleteMessage(messageId).catch((error) => {
+      // Put it back where it belongs (by time, since older pages may have
+      // loaded in the meantime) rather than restoring a stale snapshot.
+      setMessages((prev) =>
+        prev.some((m) => m.id === messageId) ? prev : [...prev, removed].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      );
+      toast.error(error instanceof Error ? error.message : "Couldn't delete that message.");
+    });
+  }
+
   function scrollToMessage(messageId: string) {
     listRef.current?.querySelector(`[data-message-id="${messageId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
@@ -158,6 +205,10 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     setReplyTarget,
     editTarget,
     setEditTarget,
+    menuMessageId,
+    menuOpen,
+    setMenuOpen,
+    openMenu,
     clientId,
     handleToggleReaction,
     startReply,
@@ -166,6 +217,9 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     handleEdited,
     handleVote,
     handleDeleteMedia,
+    handleCopy,
+    handleDelete,
+    removeMessageLocally,
     scrollToMessage,
   };
 }

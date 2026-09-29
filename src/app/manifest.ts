@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "OwnReach",
     description:
       "A creator-first social network for building, messaging, and retaining your audience without depending entirely on one platform.",
-    start_url: "/home",
+    start_url: "/messages",
     display: "standalone",
     background_color: "#fafaff",
     theme_color: "#1a1d24",

@@ -64,8 +64,8 @@ export const messages = pgTable(
     // Set only when the reply quotes a highlighted substring rather than the
     // whole original body.
     replyExcerpt: text("reply_excerpt"),
-    // Set when the sender edits `body` after sending — WhatsApp-style,
-    // editable any time, no expiry window.
+    // Set when the sender edits `body` after sending — only allowed within
+    // MESSAGE_EDIT_WINDOW_MS of createdAt (lib/message-edit.ts).
     editedAt: timestamp("edited_at", { withTimezone: true }),
     // Exactly one of sharedContactId/pollId is set for a "share a contact" or
     // "poll" message; both null means an ordinary text message. `body` is

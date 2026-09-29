@@ -1,95 +1,39 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { Contact as ContactIcon } from "lucide-react";
+import { useTransition } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { searchContacts } from "@/lib/actions/messages";
-
-interface ContactResult {
-  userId: string;
-  username: string;
-  displayName: string;
-  avatarUrl: string | null;
-}
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useContactSearch } from "@/lib/hooks/use-contact-search";
 
 interface ContactPickerDialogProps<TMessage> {
-  disabled?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onShare: (userId: string) => Promise<TMessage>;
   onShared: (message: TMessage) => void;
 }
 
-export function ContactPickerDialog<TMessage>({ disabled, onShare, onShared }: ContactPickerDialogProps<TMessage>) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ContactResult[]>([]);
-  // Set only from inside the debounce timeout below, never synchronously in
-  // the effect body — this is what "searching for the current query" derives
-  // from at render time, rather than a separately-tracked loading flag.
-  const [lastSearchedQuery, setLastSearchedQuery] = useState<string | null>(null);
+// Opened from the composer's + menu, which owns the `open` state.
+export function ContactPickerDialog<TMessage>({ open, onOpenChange, onShare, onShared }: ContactPickerDialogProps<TMessage>) {
+  const { query, setQuery, results, isSearching, trimmedQuery, reset } = useContactSearch(open);
   const [isSharing, startTransition] = useTransition();
-  // Guards against an older (slower) request's response landing after a
-  // newer one and overwriting its results — only the response matching the
-  // most recently fired request is applied.
-  const requestIdRef = useRef(0);
-
-  const trimmedQuery = query.trim();
-  const isSearching = Boolean(trimmedQuery) && lastSearchedQuery !== trimmedQuery;
-
-  useEffect(() => {
-    if (!open) return;
-    const trimmed = query.trim();
-    const handle = setTimeout(() => {
-      const requestId = ++requestIdRef.current;
-      if (!trimmed) {
-        setResults([]);
-        setLastSearchedQuery(null);
-        return;
-      }
-      searchContacts(trimmed)
-        .then((matches) => {
-          if (requestIdRef.current !== requestId) return;
-          setResults(matches);
-        })
-        .catch(() => {
-          if (requestIdRef.current !== requestId) return;
-          setResults([]);
-        })
-        .finally(() => {
-          if (requestIdRef.current !== requestId) return;
-          setLastSearchedQuery(trimmed);
-        });
-    }, 250);
-    return () => clearTimeout(handle);
-  }, [query, open]);
 
   function handlePick(userId: string) {
     startTransition(async () => {
       try {
         const message = await onShare(userId);
         onShared(message);
-        setOpen(false);
-        setQuery("");
-        setResults([]);
+        onOpenChange(false);
+        reset();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Couldn't share that contact.");
       }
     });
   }
 
-  if (disabled) return null;
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={<button type="button" className="text-muted-foreground hover:text-foreground shrink-0" />}
-        aria-label="Share a contact"
-        title="Share a contact"
-      >
-        <ContactIcon className="size-4.5" />
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Share a contact</DialogTitle>

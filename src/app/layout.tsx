@@ -53,7 +53,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-full flex-col">
         <ThemeProvider>
           {children}
-          <Toaster position="bottom-center" />
+          {/* Top, not bottom: on phones the bottom edge is the composer, the bottom
+              sheets and the tab bar, and a toast there blocks taps on them. */}
+          <Toaster position="top-center" mobileOffset={{ top: "calc(env(safe-area-inset-top, 0px) + 12px)" }} />
         </ThemeProvider>
       </body>
     </html>

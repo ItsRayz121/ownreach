@@ -1,11 +1,12 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark, Settings, BarChart3 } from "lucide-react";
+import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark, Settings, BarChart3, Bell, ChevronRight } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
 import { getProfileByUsername, getProfileCounts, getSocialLinks } from "@/lib/data/profiles";
 import { isFollowing } from "@/lib/data/follows";
 import { getPostsByAuthor } from "@/lib/data/posts";
+import { unreadNotificationCount } from "@/lib/data/notifications";
 import { UserAvatar } from "@/components/user-avatar";
 import { FollowButton } from "@/components/profile/follow-button";
 import { MessageButton } from "@/components/profile/message-button";
@@ -13,6 +14,7 @@ import { PostCard } from "@/components/post/post-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { SocialIcon } from "@/components/social-icon";
+import { ThemeSetting } from "@/components/settings/theme-setting";
 import { SOCIAL_PLATFORM_LABELS } from "@/lib/social-platforms";
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string }> }) {
@@ -29,11 +31,12 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
 
   const isOwnProfile = session?.userId === profile.userId;
 
-  const [counts, following, { items: posts }, socialLinks] = await Promise.all([
+  const [counts, following, { items: posts }, socialLinks, unreadNotifications] = await Promise.all([
     getProfileCounts(profile.userId),
     session && !isOwnProfile ? isFollowing(session.userId, profile.userId) : Promise.resolve(false),
     getPostsByAuthor(profile.userId, session?.userId),
     getSocialLinks(profile.userId),
+    isOwnProfile ? unreadNotificationCount(profile.userId) : Promise.resolve(0),
   ]);
 
   return (
@@ -139,6 +142,27 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
           </span>
         </div>
       </div>
+
+      {isOwnProfile && (
+        // Account-level controls live here rather than in the Chats / Groups /
+        // Channels headers.
+        <div className="mx-4 mt-4 divide-y overflow-hidden rounded-xl border">
+          <Link href="/notifications" className="hover:bg-accent/40 flex items-center justify-between gap-3 px-4 py-3 transition-colors">
+            <span className="flex items-center gap-3 text-[15px] font-medium">
+              <span className="relative">
+                <Bell className="text-muted-foreground size-5" />
+                {unreadNotifications > 0 && <span className="bg-primary absolute -top-0.5 -right-0.5 size-2 rounded-full" />}
+              </span>
+              Notifications
+            </span>
+            <span className="text-muted-foreground flex items-center gap-2 text-sm">
+              {unreadNotifications > 0 && <span className="bg-primary text-primary-foreground rounded-full px-2 py-0.5 text-xs font-semibold">{unreadNotifications > 99 ? "99+" : unreadNotifications} new</span>}
+              <ChevronRight className="size-4" />
+            </span>
+          </Link>
+          <ThemeSetting />
+        </div>
+      )}
 
       <div className="mt-4 border-t">
         {posts.length === 0 ? (

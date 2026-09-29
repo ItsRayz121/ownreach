@@ -2,32 +2,32 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Eye, Settings, Reply, Pencil } from "lucide-react";
-import { RichText } from "@/components/post/rich-text";
+import { ArrowLeft, Eye, Settings } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
-import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   markCommunityRead,
   loadOlderChannelMessages,
   viewChannelMessages,
   toggleChannelMessageReaction,
+  deleteChannelMessage,
   deleteChannelMessageMedia,
 } from "@/lib/actions/communities";
 import { votePoll } from "@/lib/actions/polls";
+import { isWithinEditWindow } from "@/lib/message-edit";
 import { applyReactionEvent } from "@/lib/reactions";
 import { applyPollVoteEvent } from "@/lib/poll-votes";
 import { useAblyChannel } from "@/lib/hooks/use-ably-channel";
 import { useMessageInteractions } from "@/lib/hooks/use-message-interactions";
 import { MemberAvatarStack } from "./member-avatar-stack";
 import { ChannelComposer } from "./channel-composer";
+import { ChatViewport } from "@/components/messages/chat-viewport";
+import { MessageBubble } from "@/components/messages/message-bubble";
+import { MessageActionsSheet, type MessageActions } from "@/components/messages/message-actions-sheet";
+import { MessagePressTarget } from "@/components/messages/message-press-target";
 import { MessageReactions } from "@/components/messages/message-reactions";
 import { MessageStatusTicks, type MessageStatus } from "@/components/messages/message-status-ticks";
 import { QuoteSelectionPopup } from "@/components/messages/quote-selection-popup";
-import { ReplyPreview } from "@/components/messages/reply-preview";
-import { ContactMessageCard } from "@/components/messages/contact-message-card";
-import { PollMessageCard } from "@/components/messages/poll-message-card";
-import { MediaMessageCard } from "@/components/messages/media-message-card";
 import type { ChannelMessageItem } from "@/lib/data/communities";
 
 interface ThreadMember {
@@ -89,6 +89,10 @@ export function ChannelThread({
     setReplyTarget,
     editTarget,
     setEditTarget,
+    menuMessageId,
+    menuOpen,
+    setMenuOpen,
+    openMenu,
     clientId,
     handleToggleReaction,
     startReply,
@@ -97,6 +101,9 @@ export function ChannelThread({
     handleEdited,
     handleVote,
     handleDeleteMedia,
+    handleCopy,
+    handleDelete,
+    removeMessageLocally,
     scrollToMessage,
   } = useMessageInteractions({
     messages,
@@ -106,6 +113,7 @@ export function ChannelThread({
     toggleReaction: toggleChannelMessageReaction,
     votePoll,
     deleteMedia: deleteChannelMessageMedia,
+    deleteMessage: deleteChannelMessage,
     resolveSenderName: senderName,
   });
 
@@ -162,6 +170,8 @@ export function ChannelThread({
     setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, media: { url: null, width: null, height: null, removed: true } } : m)));
   });
 
+  useAblyChannel<{ messageId: string }>(`channel:${channelId}`, "deleted", (data) => removeMessageLocally(data.messageId));
+
   useAblyChannel<{ messageId: string; userId: string; emoji: string; action: "added" | "removed" }>(
     `channel:${channelId}`,
     "reaction",
@@ -200,27 +210,58 @@ export function ChannelThread({
     return "delivered";
   }
 
+  // Mirrors the server: authors edit their own messages (groups within the
+  // edit window; broadcast-channel admins any time), and the author or a
+  // community manager can delete.
+  function actionsFor(m: ChannelMessageItem): MessageActions {
+    const mine = m.senderId === viewerId;
+    const editable = mine && canPost && !m.poll && !m.sharedContact && (kind === "channel" || isWithinEditWindow(m.createdAt));
+    return {
+      activeEmoji: m.reactions.find((r) => r.userId === viewerId)?.emoji ?? null,
+      onReact: (emoji) => handleToggleReaction(m.id, emoji),
+      onReply: canPost ? () => startReply(m) : undefined,
+      onCopy: m.body.trim() ? () => void handleCopy(m) : undefined,
+      onEdit: editable ? () => handleEdit(m) : undefined,
+      onDelete: mine || canManage ? () => handleDelete(m.id) : undefined,
+    };
+  }
+
+  const menuMessage = menuMessageId ? messages.find((m) => m.id === menuMessageId) : undefined;
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="bg-background/95 sticky top-0 z-20 flex items-center gap-2.5 border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80">
-        <UserAvatar src={avatarUrl} name={channelName} className="size-8 shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span className="truncate font-semibold">{channelName}</span>
-          <span className="text-muted-foreground truncate text-xs">@{communitySlug}</span>
+    <ChatViewport>
+      <header className="flex shrink-0 items-center gap-1 border-b px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:px-4 md:pt-2">
+        <Link
+          href={`/communities?kind=${kind}`}
+          aria-label={kind === "channel" ? "Back to channels" : "Back to groups"}
+          className="hover:bg-accent/60 flex size-10 shrink-0 items-center justify-center rounded-full md:hidden"
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-1">
+          <UserAvatar src={avatarUrl} name={channelName} className="size-10 shrink-0" />
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[15px] font-semibold">{channelName}</span>
+            <span className="text-muted-foreground truncate text-xs">
+              @{communitySlug} · {memberCount} {memberCount === 1 ? "member" : "members"}
+            </span>
+          </span>
+        </div>
+        <span className="hidden sm:block">
+          <MemberAvatarStack members={members} />
         </span>
-        <MemberAvatarStack members={members} />
         {canManage && (
           <Link
             href={`/communities/${communitySlug}/settings`}
-            className="text-muted-foreground hover:text-foreground rounded-full p-1.5 hover:bg-accent/60"
+            className="text-muted-foreground hover:text-foreground hover:bg-accent/60 flex size-10 shrink-0 items-center justify-center rounded-full"
             aria-label="Community settings"
           >
-            <Settings className="size-4" />
+            <Settings className="size-5" />
           </Link>
         )}
-      </div>
+      </header>
 
-      <div ref={listRef} className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4">
+      <div ref={listRef} data-chat-list className="relative min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 py-3">
         {canPost && <QuoteSelectionPopup containerRef={listRef} onQuote={handleQuote} />}
         {nextCursor && (
           <div className="pb-2 text-center">
@@ -237,73 +278,26 @@ export function ChannelThread({
         {messages.map((m) => {
           const mine = m.senderId === viewerId;
           const sender = senderMap.get(m.senderId);
-          const editable = mine && !m.poll && !m.sharedContact;
           return (
-            <div key={m.id} data-message-id={m.id} className={cn("group flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
+            <div key={m.id} data-message-id={m.id} className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
               {!mine && <UserAvatar src={sender?.avatarUrl} name={sender?.displayName ?? "Member"} className="size-7 shrink-0" />}
-              <div className="flex items-end gap-1">
-                {!mine && canPost && (
-                  <button
-                    type="button"
-                    onClick={() => startReply(m)}
-                    aria-label="Reply"
-                    className="text-muted-foreground hover:text-foreground mb-1 shrink-0 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                  >
-                    <Reply className="size-3.5" />
-                  </button>
-                )}
-                <div className="min-w-0">
-                  <div
-                    className={cn(
-                      "max-w-[75%] rounded-2xl px-3.5 py-2 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap",
-                      mine ? "bg-primary text-primary-foreground" : "bg-muted",
-                      (m.poll || m.sharedContact || m.media) && "px-2 py-1.5"
-                    )}
-                  >
-                    {!mine && <p className="mb-0.5 text-xs font-medium opacity-80">{sender?.displayName ?? "Member"}</p>}
-                    {m.replyTo && (
-                      <ReplyPreview
-                        senderName={senderName(m.replyTo.senderId)}
-                        text={m.replyExcerpt ?? m.replyTo.body.slice(0, 120)}
-                        mine={mine}
-                        onClick={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
-                      />
-                    )}
-                    {m.poll ? (
-                      <PollMessageCard poll={m.poll} mine={mine} onVote={(optionId) => handleVote(m.poll!.id, optionId)} />
-                    ) : m.sharedContact ? (
-                      <ContactMessageCard contact={m.sharedContact} mine={mine} />
-                    ) : m.media ? (
-                      <div className="flex flex-col gap-1.5">
-                        <MediaMessageCard
-                          media={m.media}
-                          mine={mine}
-                          onDelete={(mine || canManage) && !m.media.removed ? () => handleDeleteMedia(m.id) : undefined}
-                        />
-                        {m.body && (
-                          <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
-                            <RichText text={m.body} />
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      // Suppresses the native OS text-selection menu/callout on
-                      // message text only (see QuoteSelectionPopup's in-app
-                      // Copy/Quote replacement) — scoped here, not on the
-                      // whole list, so it doesn't also swallow right-click on
-                      // poll/contact-card links elsewhere in the bubble.
-                      <span onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: "none" }}>
-                        <RichText text={m.body} />
-                      </span>
-                    )}
-                    <div
-                      className={cn(
-                        "mt-0.5 flex items-center gap-2 text-[10px]",
-                        mine ? "text-primary-foreground/70" : "text-muted-foreground"
-                      )}
-                    >
-                      <span>{formatRelativeTime(m.createdAt)}</span>
-                      {m.editedAt && <span>· edited</span>}
+              <MessagePressTarget
+                mine={mine}
+                onOpenMenu={() => openMenu(m.id)}
+                // The row also holds the avatar, so its share of the width is
+                // taken off the cap — bubbles then line up with DMs.
+                className={cn("min-w-0", mine ? "max-w-[88%] md:max-w-[75%]" : "max-w-[calc(88%-2.5rem)] md:max-w-[calc(75%-2.5rem)]")}
+              >
+                <MessageBubble
+                  message={m}
+                  mine={mine}
+                  senderLabel={mine ? undefined : (sender?.displayName ?? "Member")}
+                  replySenderName={m.replyTo ? senderName(m.replyTo.senderId) : undefined}
+                  onJumpToReply={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
+                  onVote={m.poll ? (optionId) => handleVote(m.poll!.id, optionId) : undefined}
+                  onDeleteMedia={(mine || canManage) && m.media && !m.media.removed ? () => handleDeleteMedia(m.id) : undefined}
+                  meta={
+                    <>
                       {showViews && mine && (
                         <span className="flex items-center gap-0.5" title={`${m.viewCount} view${m.viewCount === 1 ? "" : "s"}`}>
                           <Eye className="size-2.5" />
@@ -311,23 +305,11 @@ export function ChannelThread({
                         </span>
                       )}
                       {kind === "group" && mine && <MessageStatusTicks status={tickStatus(m)} />}
-                    </div>
-                  </div>
-                  <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
-                </div>
-                {mine && canPost && (
-                  <div className="mb-1 flex shrink-0 items-center gap-1.5 self-end opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                    {editable && (
-                      <button type="button" onClick={() => handleEdit(m)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
-                        <Pencil className="size-3.5" />
-                      </button>
-                    )}
-                    <button type="button" onClick={() => startReply(m)} aria-label="Reply" className="text-muted-foreground hover:text-foreground">
-                      <Reply className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
+                    </>
+                  }
+                />
+                <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
+              </MessagePressTarget>
             </div>
           );
         })}
@@ -345,10 +327,10 @@ export function ChannelThread({
           onEdited={handleEdited}
         />
       ) : (
-        <div className="text-muted-foreground border-t px-4 py-3 text-center text-sm">
-          Only admins can post in this channel.
-        </div>
+        <div className="text-muted-foreground shrink-0 border-t px-4 py-3 text-center text-sm">Only admins can post in this channel.</div>
       )}
-    </div>
+
+      <MessageActionsSheet open={menuOpen && Boolean(menuMessage)} onOpenChange={setMenuOpen} actions={menuMessage ? actionsFor(menuMessage) : {}} />
+    </ChatViewport>
   );
 }

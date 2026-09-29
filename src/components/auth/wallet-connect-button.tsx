@@ -68,7 +68,7 @@ export function WalletConnectButton({ link }: WalletConnectButtonProps) {
       const data = await verifyRes.json();
       if (!verifyRes.ok) throw new Error(data.error ?? "Wallet sign-in failed");
 
-      router.push(data.redirect ?? "/home");
+      router.push(data.redirect ?? "/messages");
       router.refresh();
     } catch (e) {
       setStatus("error");

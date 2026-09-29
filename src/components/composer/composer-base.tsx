@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Sparkles, Send, Check, ImagePlus, Loader2, X } from "lucide-react";
+import { Sparkles, Send, Check, ImagePlus, Loader2, Plus, X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { BottomSheet, BottomSheetContent } from "@/components/ui/bottom-sheet";
 import { useSelectionFormatting } from "@/lib/hooks/use-selection-formatting";
 import { useMagicPencilPaste } from "@/lib/hooks/use-magic-pencil-paste";
 import { SelectionToolbar } from "@/components/post/selection-toolbar";
@@ -28,6 +29,14 @@ export interface PendingAttachment {
   publicId: string;
 }
 
+/** One row in the composer's + menu (beyond the built-in Image row). */
+export interface AttachMenuItem {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  onSelect: () => void;
+}
+
 export interface ComposerBaseProps<TMessage> {
   onSend: (body: string, replyTarget: ComposerReplyTarget | null, attachment: PendingAttachment | null) => Promise<TMessage>;
   onSent: (message: TMessage, tempId?: string) => void;
@@ -40,7 +49,10 @@ export interface ComposerBaseProps<TMessage> {
   editTarget?: ComposerEditTarget | null;
   onEditSubmit?: (messageId: string, body: string) => Promise<void>;
   onCancelEdit?: () => void;
-  extraActions?: React.ReactNode;
+  /** Extra rows for the + menu (poll, contact…). Hidden while replying — see below. */
+  attachItems?: AttachMenuItem[];
+  /** Dialogs those rows open; rendered outside the menu so they outlive it closing. */
+  dialogs?: React.ReactNode;
 }
 
 export function ComposerBase<TMessage>({
@@ -55,13 +67,15 @@ export function ComposerBase<TMessage>({
   editTarget,
   onEditSubmit,
   onCancelEdit,
-  extraActions,
+  attachItems,
+  dialogs,
 }: ComposerBaseProps<TMessage>) {
   const [body, setBody] = useState("");
   const [syncedEditId, setSyncedEditId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -114,6 +128,12 @@ export function ComposerBase<TMessage>({
     if (editTarget) textareaRef.current?.focus();
   }, [editTarget]);
 
+  // Tapping "Reply" in the message menu should land the cursor in the input.
+  const replyMessageId = replyTarget?.messageId;
+  useEffect(() => {
+    if (replyMessageId) textareaRef.current?.focus();
+  }, [replyMessageId]);
+
   function handleSubmit() {
     const trimmed = body.trim();
 
@@ -160,11 +180,17 @@ export function ComposerBase<TMessage>({
   }
 
   if (disabled) {
-    return <div className="text-muted-foreground border-t px-4 py-3 text-center text-sm">{disabledReason}</div>;
+    return <div className="text-muted-foreground shrink-0 border-t px-4 py-3 text-center text-sm">{disabledReason}</div>;
   }
 
+  // Poll/contact-share post standalone messages with no replyToMessageId
+  // support — hidden during a reply so creating one can't silently leave the
+  // pending reply banner attached to whatever's typed next instead.
+  const extraItems = replyTarget ? [] : (attachItems ?? []);
+  const imageBlocked = isUploading || Boolean(attachment);
+
   return (
-    <div className="border-t">
+    <div className="bg-background shrink-0 border-t">
       {editTarget && onCancelEdit ? (
         <ComposerEditBanner onCancel={onCancelEdit} />
       ) : (
@@ -179,13 +205,38 @@ export function ComposerBase<TMessage>({
             type="button"
             onClick={() => setAttachment(null)}
             aria-label="Remove image"
-            className="text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground hover:bg-accent/60 flex size-9 items-center justify-center rounded-full"
           >
             <X className="size-4" />
           </button>
         </div>
       )}
-      <div className="flex items-end gap-2 px-3 py-2.5">
+      {!editTarget && magicPencil.active && (
+        <button
+          type="button"
+          onClick={magicPencil.apply}
+          className="text-primary hover:bg-accent/40 flex w-full items-center gap-1.5 border-b px-4 py-2 text-xs font-medium"
+        >
+          <Sparkles className="size-3.5" />
+          Restore original formatting
+        </button>
+      )}
+      <div className="flex items-end gap-2 px-2 py-2">
+        {!editTarget && (
+          <>
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-muted-foreground size-10 rounded-full"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Add to message"
+              aria-haspopup="dialog"
+            >
+              {isUploading ? <Loader2 className="size-5 animate-spin" /> : <Plus className="size-6" />}
+            </Button>
+          </>
+        )}
         <div className="min-w-0 flex-1">
           <Textarea
             ref={textareaRef}
@@ -196,7 +247,10 @@ export function ComposerBase<TMessage>({
             }}
             onPaste={magicPencil.handlePaste}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Enter sends with a hardware keyboard; on a touch keyboard it
+              // inserts a newline and the Send button sends, as in other
+              // messaging apps. Never fires mid-IME-composition.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
                 e.preventDefault();
                 handleSubmit();
               }
@@ -207,52 +261,67 @@ export function ComposerBase<TMessage>({
             }}
             placeholder="Message…"
             rows={1}
-            className="min-h-9 resize-none border-none px-0 shadow-none focus-visible:ring-0"
+            className="bg-muted/40 max-h-36 min-h-10 resize-none overflow-y-auto rounded-2xl px-3.5 py-2 leading-normal"
           />
           <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
         </div>
-        {!editTarget && (
-          <>
-            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={isUploading || Boolean(attachment)}
-              aria-label="Attach an image"
-              title="Attach an image"
-            >
-              {isUploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
-            </Button>
-          </>
-        )}
-        {/* Poll/contact-share dialogs post standalone messages with no
-            replyToMessageId support — hidden during a reply so creating one
-            can't silently leave the pending reply banner attached to
-            whatever's typed next instead. */}
-        {!editTarget && !replyTarget && extraActions}
-        {!editTarget && magicPencil.active && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={magicPencil.apply}
-            aria-label="Magic pencil — restore original formatting"
-            title="Magic pencil — restore original formatting"
-          >
-            <Sparkles className="size-4" />
-          </Button>
-        )}
         <Button
-          size="icon"
+          className="size-10 rounded-full"
           onClick={handleSubmit}
+          // Keeps the keyboard up (and focus in the field) when Send is tapped.
+          onMouseDown={(e) => e.preventDefault()}
           disabled={isPending || isUploading || (!body.trim() && !attachment)}
           aria-label={editTarget ? "Save edit" : "Send"}
         >
-          {editTarget ? <Check className="size-4" /> : <Send className="size-4" />}
+          {editTarget ? <Check className="size-5" /> : <Send className="size-5" />}
         </Button>
       </div>
+
+      <BottomSheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <BottomSheetContent title="Add to message">
+          <div className="flex flex-col px-2 pt-2 pb-1">
+            <AttachRow
+              icon={ImagePlus}
+              label="Image"
+              disabled={imageBlocked}
+              onClick={() => {
+                // Opened synchronously from this tap so the browser still
+                // treats the file dialog as user-initiated.
+                imageInputRef.current?.click();
+                setMenuOpen(false);
+              }}
+            />
+            {extraItems.map((item) => (
+              <AttachRow
+                key={item.key}
+                icon={item.icon}
+                label={item.label}
+                onClick={() => {
+                  setMenuOpen(false);
+                  item.onSelect();
+                }}
+              />
+            ))}
+          </div>
+        </BottomSheetContent>
+      </BottomSheet>
+      {dialogs}
     </div>
+  );
+}
+
+function AttachRow({ icon: Icon, label, onClick, disabled }: { icon: LucideIcon; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="hover:bg-accent/60 focus-visible:ring-ring flex h-14 items-center gap-3.5 rounded-lg px-3 text-left text-[15px] font-medium outline-none transition-colors focus-visible:ring-2 disabled:opacity-50"
+    >
+      <span className="bg-accent text-accent-foreground flex size-10 shrink-0 items-center justify-center rounded-full">
+        <Icon className="size-5" strokeWidth={1.9} />
+      </span>
+      {label}
+    </button>
   );
 }

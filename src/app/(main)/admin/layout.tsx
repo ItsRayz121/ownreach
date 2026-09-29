@@ -7,7 +7,7 @@ export const metadata = { title: "Admin / OwnReach", robots: { index: false } };
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await verifySession();
   if (!session) redirect("/login?next=/admin");
-  if (session.role !== "admin") redirect("/home");
+  if (session.role !== "admin") redirect("/messages");
 
   return (
     <div>

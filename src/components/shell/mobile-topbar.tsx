@@ -1,41 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, ShieldCheck } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { NotificationBell } from "./notification-bell";
+import { usePathname } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
 
 interface MobileTopBarProps {
-  userId?: string;
   username?: string;
-  unreadNotifications?: number;
   isAdmin?: boolean;
 }
 
-export function MobileTopBar({ userId, username, unreadNotifications = 0, isAdmin = false }: MobileTopBarProps) {
+// The app's own list pages (Chats, Groups, Channels) carry their own title
+// header, so the brand bar would just eat vertical space there. Notifications
+// and the theme toggle live in Profile rather than up here.
+const SELF_HEADED_PATHS = new Set(["/messages", "/communities"]);
+
+export function MobileTopBar({ username, isAdmin = false }: MobileTopBarProps) {
+  const pathname = usePathname();
+  if (SELF_HEADED_PATHS.has(pathname)) return null;
+
   return (
-    <header className="bg-background/95 pt-safe sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3 backdrop-blur supports-backdrop-filter:bg-background/80 md:hidden">
-      <Link href="/home" className="text-lg font-semibold tracking-tight">
+    <header className="bg-background/95 pt-safe supports-backdrop-filter:bg-background/80 sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3 backdrop-blur md:hidden">
+      <Link href={username ? "/messages" : "/"} className="text-lg font-semibold tracking-tight">
         OwnReach
       </Link>
-      <div className="flex items-center gap-1">
-        {isAdmin && (
-          <Link href="/admin" className="rounded-full p-2 hover:bg-accent/60" aria-label="Admin">
-            <ShieldCheck className="size-5" />
-          </Link>
-        )}
-        {username && userId && (
-          <NotificationBell userId={userId} initialUnread={unreadNotifications > 0}>
-            {(unread) => (
-              <Link href="/notifications" className="relative rounded-full p-2 hover:bg-accent/60" aria-label="Notifications">
-                <Bell className="size-5" />
-                {unread && <span className="bg-primary absolute top-1.5 right-1.5 size-2 rounded-full" />}
-              </Link>
-            )}
-          </NotificationBell>
-        )}
-        <ThemeToggle />
-      </div>
+      {isAdmin && (
+        <Link href="/admin" className="hover:bg-accent/60 flex size-10 items-center justify-center rounded-full" aria-label="Admin">
+          <ShieldCheck className="size-5" />
+        </Link>
+      )}
     </header>
   );
 }

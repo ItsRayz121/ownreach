@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     });
 
     await createSession(userId);
-    return NextResponse.json({ status: "done", redirect: "/home" });
+    return NextResponse.json({ status: "done", redirect: "/messages" });
   } catch (error) {
     if (error instanceof ProviderAlreadyLinkedError) {
       return NextResponse.json({ status: "error", error: error.message });
