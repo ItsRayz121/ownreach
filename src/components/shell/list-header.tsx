@@ -104,12 +104,6 @@ export function FilterChipRow({ children }: { children: React.ReactNode }) {
   return <div className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{children}</div>;
 }
 
-export const filterChipClassName = (active: boolean) =>
-  cn(
-    "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors",
-    active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-  );
-
 export function ChipCount({ count, active }: { count: number; active: boolean }) {
   return (
     <span
