@@ -20,7 +20,6 @@ interface DesktopSidebarProps {
   unreadGroups?: boolean;
   unreadChannels?: boolean;
   isAdmin?: boolean;
-  canPost?: boolean;
 }
 
 export function DesktopSidebar({
@@ -32,16 +31,15 @@ export function DesktopSidebar({
   unreadGroups = false,
   unreadChannels = false,
   isAdmin = false,
-  canPost = false,
 }: DesktopSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels }, canPost);
+  const items = buildNavItems(username, { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels });
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col justify-between border-r px-3 py-6 md:flex">
       <div>
-        <Link href="/home" aria-label="OwnReach" className="mb-8 block px-3">
+        <Link href={username ? "/messages" : "/"} aria-label="OwnReach" className="mb-8 block px-3">
           <Logo size={36} textClassName="text-xl" />
         </Link>
         <ul className="flex flex-col gap-1">

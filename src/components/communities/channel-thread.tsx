@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ArrowLeft, Eye, Settings } from "lucide-react";
+import { ArrowLeft, BarChart3, Eye, Settings } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
 import {
@@ -263,6 +263,15 @@ export function ChannelThread({
         <span className="hidden sm:block">
           <MemberAvatarStack members={members} />
         </span>
+        {canManage && kind === "channel" && (
+          <Link
+            href={`/communities/${communitySlug}/analytics`}
+            className="text-muted-foreground hover:text-foreground hover:bg-accent/60 flex size-10 shrink-0 items-center justify-center rounded-full"
+            aria-label="Channel analytics"
+          >
+            <BarChart3 className="size-5" />
+          </Link>
+        )}
         {canManage && (
           <Link
             href={`/communities/${communitySlug}/settings`}

@@ -17,8 +17,8 @@ export default function NotFound() {
         title="Page not found"
         description="The page you're looking for doesn't exist or may have moved."
         action={
-          <Button render={<Link href="/home" />} nativeButton={false} className="mt-2">
-            Back to Home
+          <Button render={<Link href="/messages" />} nativeButton={false} className="mt-2">
+            Back to Chats
           </Button>
         }
       />

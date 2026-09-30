@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
 import { getFeed } from "@/lib/data/posts";
@@ -8,6 +9,11 @@ import { EmptyState } from "@/components/empty-state";
 import { canCreatePost } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
+// The social feed is parked while it has nothing useful in it: no screen links here and
+// everyone who lands on /home (old bookmark, installed shortcut) goes to Chats. Flip this
+// to bring the For You / Following feed back.
+const FEED_ENABLED = false as boolean;
+
 export const metadata = { title: "Home / OwnReach", robots: { index: false } };
 
 export default async function HomePage({
@@ -15,6 +21,7 @@ export default async function HomePage({
 }: {
   searchParams: Promise<{ tab?: string; cursor?: string; compose?: string }>;
 }) {
+  if (!FEED_ENABLED) redirect("/messages");
   const { tab, cursor, compose } = await searchParams;
   const session = await verifySession();
   const scope = tab === "following" ? "following" : "for-you";

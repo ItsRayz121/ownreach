@@ -39,7 +39,7 @@ export function PostCard({ post, isAuthenticated, isDetail, viewerId, viewerRole
             {formatRelativeTime(post.createdAt)}
           </Link>
           {viewerId && (
-            <PostActionsMenu postId={post.id} canDelete={canDelete} redirectTo={isDetail ? "/home" : undefined} />
+            <PostActionsMenu postId={post.id} canDelete={canDelete} redirectTo={isDetail ? "/messages" : undefined} />
           )}
         </div>
 

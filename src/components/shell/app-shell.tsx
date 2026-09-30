@@ -11,7 +11,6 @@ interface AppShellProps {
   unreadGroups?: boolean;
   unreadChannels?: boolean;
   isAdmin?: boolean;
-  canPost?: boolean;
   children: React.ReactNode;
 }
 
@@ -24,7 +23,6 @@ export function AppShell({
   unreadGroups = false,
   unreadChannels = false,
   isAdmin = false,
-  canPost = false,
   children,
 }: AppShellProps) {
   return (
@@ -38,7 +36,6 @@ export function AppShell({
         unreadGroups={unreadGroups}
         unreadChannels={unreadChannels}
         isAdmin={isAdmin}
-        canPost={canPost}
       />
       <div className="flex min-h-dvh w-full flex-1 flex-col md:border-x">
         <MobileTopBar userId={userId} username={username} isAdmin={isAdmin} unreadNotifications={unreadNotifications} />
@@ -51,7 +48,6 @@ export function AppShell({
         unreadMessages={unreadMessages}
         unreadGroups={unreadGroups}
         unreadChannels={unreadChannels}
-        canPost={canPost}
       />
     </div>
   );

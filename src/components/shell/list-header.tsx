@@ -21,11 +21,20 @@ interface ListHeaderProps {
   onSearchClose?: () => void;
   /** Where to go when search is closed, for server-rendered lists that filter via the URL. */
   searchCloseHref?: string;
+  /** Small brand mark shown before the title. */
+  logo?: React.ReactNode;
+  /** Icon buttons shown before the search icon (e.g. create). Use {@link headerIconButtonClassName}. */
+  startActions?: React.ReactNode;
+  /** Icon buttons shown after the search icon (e.g. discover). */
+  endActions?: React.ReactNode;
   /** Filter chips… stacked under the title. */
   children?: React.ReactNode;
 }
 
 const iconButtonClassName = "hover:bg-accent/60 flex size-10 shrink-0 items-center justify-center rounded-full transition-colors";
+
+/** Same look as the built-in search icon, for buttons/links passed as start/end actions so all header icons match. */
+export const headerIconButtonClassName = iconButtonClassName;
 
 // Sticky header shared by the Chats, Groups and Channels lists so the three
 // sections look and behave the same. It shows the title and one search icon;
@@ -41,6 +50,9 @@ export function ListHeader({
   searchOpen = false,
   onSearchClose,
   searchCloseHref,
+  logo,
+  startActions,
+  endActions,
   children,
 }: ListHeaderProps) {
   const router = useRouter();
@@ -88,10 +100,17 @@ export function ListHeader({
         )
       ) : (
         <div className="flex h-10 items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-          <button type="button" onClick={() => setSearching(true)} aria-label={`Search ${title.toLowerCase()}`} className={cn(iconButtonClassName, "-mr-2")}>
-            <Search className="size-5" />
-          </button>
+          <div className="flex min-w-0 items-center gap-2.5">
+            {logo}
+            <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
+          </div>
+          <div className="-mr-2 flex shrink-0 items-center">
+            {startActions}
+            <button type="button" onClick={() => setSearching(true)} aria-label={`Search ${title.toLowerCase()}`} className={iconButtonClassName}>
+              <Search className="size-5" />
+            </button>
+            {endActions}
+          </div>
         </div>
       )}
       {children}

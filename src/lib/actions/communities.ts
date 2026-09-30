@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { communities, communityMembers, channels, channelMessages, channelMessageReactions, messagePolls, messagePollOptions, messageMedia, profiles } from "@/db/schema";
+import { communities, communityMembers, communityDepartures, channels, channelMessages, channelMessageReactions, messagePolls, messagePollOptions, messageMedia, profiles } from "@/db/schema";
 import { verifySession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getMembership, getChannel, listChannelMessages, recordChannelMessageViews } from "@/lib/data/communities";
@@ -107,11 +107,21 @@ export async function leaveCommunity(communityId: string) {
     throw new Error("Transfer ownership or delete the community before leaving.");
   }
 
-  await db
-    .delete(communityMembers)
-    .where(and(eq(communityMembers.communityId, communityId), eq(communityMembers.userId, session.userId)));
+  await deleteMembershipRecordingDeparture(communityId, session.userId);
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
   revalidatePath("/communities");
+}
+
+// Every path that ends a membership goes through here so channel analytics
+// sees the departure (the membership row itself is gone afterwards).
+async function deleteMembershipRecordingDeparture(communityId: string, userId: string) {
+  await db.transaction(async (tx) => {
+    const [removed] = await tx
+      .delete(communityMembers)
+      .where(and(eq(communityMembers.communityId, communityId), eq(communityMembers.userId, userId)))
+      .returning({ joinedAt: communityMembers.joinedAt });
+    if (removed) await tx.insert(communityDepartures).values({ communityId, userId, joinedAt: removed.joinedAt });
+  });
 }
 
 const updateCommunitySchema = z.object({
@@ -650,6 +660,6 @@ export async function removeMember(communityId: string, userId: string) {
     throw new Error("Only the owner can remove an admin.");
   }
 
-  await db.delete(communityMembers).where(and(eq(communityMembers.communityId, communityId), eq(communityMembers.userId, userId)));
+  await deleteMembershipRecordingDeparture(communityId, userId);
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
 }

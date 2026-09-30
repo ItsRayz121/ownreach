@@ -15,7 +15,6 @@ interface MobileBottomNavProps {
   unreadGroups?: boolean;
   unreadChannels?: boolean;
   unreadNotifications?: number;
-  canPost?: boolean;
 }
 
 export function MobileBottomNav({
@@ -25,7 +24,6 @@ export function MobileBottomNav({
   unreadGroups = false,
   unreadChannels = false,
   unreadNotifications = 0,
-  canPost = false,
 }: MobileBottomNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -43,8 +41,7 @@ export function MobileBottomNav({
 
   const items = buildNavItems(
     username,
-    { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels, notifications: notificationsUnread },
-    canPost
+    { messages: unreadMessages, groups: unreadGroups, channels: unreadChannels, notifications: notificationsUnread }
   );
 
   return (

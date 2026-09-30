@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Radio, PlusSquare, MessageCircle, User, Users } from "lucide-react";
+import { Radio, MessageCircle, User, Users } from "lucide-react";
 
 export interface NavItem {
   label: string;
@@ -17,11 +17,10 @@ export interface NavUnread {
   notifications?: boolean;
 }
 
-export function buildNavItems(username?: string, unread: NavUnread = {}, canPost = false): NavItem[] {
+export function buildNavItems(username?: string, unread: NavUnread = {}): NavItem[] {
   return [
     ...(username ? [{ label: "Chats", href: "/messages", icon: MessageCircle, badge: unread.messages }] : []),
     ...(username ? [{ label: "Groups", href: "/communities?kind=group", icon: Users, badge: unread.groups }] : []),
-    ...(canPost ? [{ label: "Create", href: "/home?compose=1", icon: PlusSquare }] : []),
     ...(username ? [{ label: "Channels", href: "/communities?kind=channel", icon: Radio, badge: unread.channels }] : []),
     { label: "Profile", href: username ? `/${username}` : "/login", icon: User, badge: unread.notifications },
   ];
@@ -34,7 +33,6 @@ export function buildNavItems(username?: string, unread: NavUnread = {}, canPost
  * query params explicitly for any item whose href carries them.
  */
 export function isNavItemActive(item: NavItem, pathname: string, searchParams?: URLSearchParams | null): boolean {
-  if (item.href === "/home?compose=1") return false; // Create is an action, not a section
   const [itemPath, itemQuery] = item.href.split("?");
   if (itemQuery) {
     if (pathname !== itemPath) return false;

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Compass, Users } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { ListHeader, FilterChipRow } from "@/components/shell/list-header";
+import { ListHeader, FilterChipRow, headerIconButtonClassName } from "@/components/shell/list-header";
 import { filterChipClassName } from "@/components/shell/filter-chip";
 import { CommunityListItem } from "./community-list-item";
 import { CreateCommunityDialog } from "./create-community-dialog";
@@ -34,6 +34,12 @@ export function CommunitiesView({ communities, kind, label }: CommunitiesViewPro
         searchPlaceholder={`Search ${lowerLabel}`}
         searchInputProps={{ value: query, onChange: (e) => setQuery(e.target.value) }}
         onSearchClose={() => setQuery("")}
+        startActions={<CreateCommunityDialog defaultKind={kind} iconTrigger />}
+        endActions={
+          <Link href={`/communities/discover?kind=${kind}`} aria-label={`Discover public ${lowerLabel}`} className={headerIconButtonClassName}>
+            <Compass className="size-5" />
+          </Link>
+        }
       >
         <FilterChipRow>
           <button type="button" onClick={() => setUnreadOnly(false)} className={filterChipClassName(!unreadOnly)} aria-pressed={!unreadOnly}>
@@ -54,35 +60,23 @@ export function CommunitiesView({ communities, kind, label }: CommunitiesViewPro
               ? `Nothing in your ${lowerLabel} matches "${query}".`
               : unreadOnly
                 ? `${label} with unread messages will show up here.`
-                : `Create your first ${kind}, or discover public ${lowerLabel}.`
+                : `Tap + to create your first ${kind}, or the compass to discover public ${lowerLabel}.`
           }
           action={
-            <Link
-              href={`/communities/discover?kind=${kind}${query ? `&q=${encodeURIComponent(query)}` : ""}`}
-              className="text-primary flex items-center gap-1.5 text-sm font-medium hover:underline"
-            >
-              <Compass className="size-4" />
-              Discover public {lowerLabel}
-            </Link>
+            query ? (
+              <Link
+                href={`/communities/discover?kind=${kind}&q=${encodeURIComponent(query)}`}
+                className="text-primary flex items-center gap-1.5 text-sm font-medium hover:underline"
+              >
+                <Compass className="size-4" />
+                Search public {lowerLabel} for &quot;{query}&quot;
+              </Link>
+            ) : undefined
           }
         />
       ) : (
         filtered.map((community) => <CommunityListItem key={community.id} community={community} />)
       )}
-
-      {/* Creating and discovering live here now that the header has no "+". */}
-      <div className="flex flex-wrap items-center justify-center gap-3 px-4 py-6">
-        <CreateCommunityDialog defaultKind={kind} />
-        {filtered.length > 0 && (
-          <Link
-            href={`/communities/discover?kind=${kind}${query ? `&q=${encodeURIComponent(query)}` : ""}`}
-            className="text-primary flex items-center gap-1.5 text-sm font-medium hover:underline"
-          >
-            <Compass className="size-4" />
-            Discover public {lowerLabel}
-          </Link>
-        )}
-      </div>
     </div>
   );
 }

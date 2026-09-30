@@ -25,8 +25,8 @@ const VERBS: Record<NotificationItem["type"], string> = {
 };
 
 function notificationHref(n: NotificationItem): string {
-  if (n.type === "follow") return n.actor ? `/${n.actor.username}` : "/home";
-  return n.postId ? `/post/${n.postId}` : "/home";
+  if (n.type === "follow") return n.actor ? `/${n.actor.username}` : "/messages";
+  return n.postId ? `/post/${n.postId}` : "/messages";
 }
 
 export default async function NotificationsPage({

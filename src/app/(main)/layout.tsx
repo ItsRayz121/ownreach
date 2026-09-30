@@ -2,7 +2,6 @@ import { verifySession } from "@/lib/auth/session";
 import { unreadNotificationCount } from "@/lib/data/notifications";
 import { countUnreadConversations } from "@/lib/data/messages";
 import { hasUnreadGroups, hasUnreadChannels } from "@/lib/data/communities";
-import { canCreatePost } from "@/lib/permissions";
 import { AppShell } from "@/components/shell/app-shell";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
@@ -26,7 +25,6 @@ export default async function MainLayout({ children }: { children: React.ReactNo
       unreadGroups={unreadGroups}
       unreadChannels={unreadChannels}
       isAdmin={session?.role === "admin"}
-      canPost={canCreatePost(session)}
     >
       {children}
     </AppShell>

@@ -155,3 +155,24 @@ export type NewChannel = typeof channels.$inferInsert;
 export type ChannelMessage = typeof channelMessages.$inferSelect;
 export type ChannelMessageView = typeof channelMessageViews.$inferSelect;
 export type ChannelMessageReaction = typeof channelMessageReactions.$inferSelect;
+
+// A membership row is deleted when someone leaves or is removed, so on its own
+// it can't say who left or when. One row per departure keeps that history (and
+// the departed member's original joinedAt), which is what channel analytics
+// needs for "members left" and for counting past joins. Current members' joins
+// still come from communityMembers.joinedAt; there is no join-event table.
+export const communityDepartures = pgTable(
+  "community_departures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    communityId: uuid("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull(),
+    leftAt: timestamp("left_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("community_departures_community_left_idx").on(table.communityId, table.leftAt)]
+);

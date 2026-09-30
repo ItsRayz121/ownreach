@@ -7,6 +7,7 @@ import { searchProfiles } from "@/lib/data/profiles";
 import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState } from "@/components/empty-state";
 import { ListHeader, FilterChipRow, ChipCount } from "@/components/shell/list-header";
+import { LogoMark } from "@/components/brand/logo";
 import { filterChipClassName } from "@/components/shell/filter-chip";
 import { StartConversationRow } from "@/components/messages/start-conversation-row";
 import { MessageRequestRow } from "@/components/messages/message-request-row";
@@ -52,6 +53,7 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
     <div>
       <ListHeader
         title="Chats"
+        logo={<LogoMark size={28} />}
         searchPlaceholder="Search chats or @username"
         searchInputProps={{ name: "q", defaultValue: query }}
         searchFormAction="/messages"

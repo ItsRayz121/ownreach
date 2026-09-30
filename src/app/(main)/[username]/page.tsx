@@ -1,9 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark, Settings, BarChart3 } from "lucide-react";
+import { CalendarDays, LinkIcon, MapPin, BadgeCheck, Bookmark, Bell, Settings, LogOut, ChevronRight } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
-import { getProfileByUsername, getProfileCounts, getSocialLinks } from "@/lib/data/profiles";
+import { logout } from "@/lib/actions/auth";
+import { getProfileByUsername, getSocialLinks } from "@/lib/data/profiles";
 import { isFollowing } from "@/lib/data/follows";
 import { getPostsByAuthor } from "@/lib/data/posts";
 import { unreadNotificationCount } from "@/lib/data/notifications";
@@ -11,7 +12,6 @@ import { UserAvatar } from "@/components/user-avatar";
 import { FollowButton } from "@/components/profile/follow-button";
 import { MessageButton } from "@/components/profile/message-button";
 import { PostCard } from "@/components/post/post-card";
-import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { SocialIcon } from "@/components/social-icon";
 import { ProfileHeaderActions } from "@/components/shell/profile-header-actions";
@@ -31,8 +31,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
 
   const isOwnProfile = session?.userId === profile.userId;
 
-  const [counts, following, { items: posts }, socialLinks, unreadNotifications] = await Promise.all([
-    getProfileCounts(profile.userId),
+  const [following, { items: posts }, socialLinks, unreadNotifications] = await Promise.all([
     session && !isOwnProfile ? isFollowing(session.userId, profile.userId) : Promise.resolve(false),
     getPostsByAuthor(profile.userId, session?.userId),
     getSocialLinks(profile.userId),
@@ -41,30 +40,24 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
 
   return (
     <div>
-      <div className="bg-muted relative h-36 sm:h-48">
-        {profile.coverUrl && <Image src={profile.coverUrl} alt="" fill className="object-cover" priority />}
-      </div>
+      {/* No banner placeholder: without a cover the initials avatar sits at the top instead of under an empty grey block. */}
+      {profile.coverUrl && (
+        <div className="bg-muted relative h-36 sm:h-48">
+          <Image src={profile.coverUrl} alt="" fill className="object-cover" priority />
+        </div>
+      )}
 
       <div className="px-4">
-        <div className="-mt-12 flex items-end justify-between">
+        <div className={profile.coverUrl ? "-mt-12 flex items-end justify-between" : "flex items-end justify-between pt-6"}>
           <UserAvatar
             src={profile.avatarUrl}
             name={profile.displayName}
-            className="border-background size-24 border-4"
+            className={profile.coverUrl ? "border-background size-24 border-4 text-3xl" : "size-24 text-3xl"}
           />
           {isOwnProfile ? (
             <div className="flex items-center gap-2">
-              <Button render={<Link href="/bookmarks" aria-label="Bookmarks" />} nativeButton={false} variant="outline" size="icon">
-                <Bookmark className="size-4" />
-              </Button>
               <Button render={<Link href="/settings/profile" />} nativeButton={false} variant="outline">
                 Edit profile
-              </Button>
-              <Button render={<Link href="/settings/account" aria-label="Settings" />} nativeButton={false} variant="outline" size="icon">
-                <Settings className="size-4" />
-              </Button>
-              <Button render={<Link href="/settings/analytics" aria-label="Analytics" />} nativeButton={false} variant="outline" size="icon">
-                <BarChart3 className="size-4" />
               </Button>
               {/* Phones get these in the top bar; it is hidden on desktop. */}
               <ProfileHeaderActions userId={session?.userId} unreadNotifications={unreadNotifications} className="hidden items-center md:flex" />
@@ -132,32 +125,40 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
           </div>
         )}
 
-        <div className="mt-3 flex gap-4 text-sm">
-          <span>
-            <strong>{counts.following}</strong> <span className="text-muted-foreground">Following</span>
-          </span>
-          <span>
-            <strong>{counts.followers}</strong> <span className="text-muted-foreground">Followers</span>
-          </span>
-          <span>
-            <strong>{counts.posts}</strong> <span className="text-muted-foreground">Posts</span>
-          </span>
-        </div>
+        {/* Posts / followers / following counts are hidden until those features are live. */}
       </div>
 
-      <div className="mt-4 border-t">
-        {posts.length === 0 ? (
-          <EmptyState
-            icon={FileText}
-            title="No posts yet"
-            description={isOwnProfile ? "Share your first post from the Home tab." : `@${profile.username} hasn't posted yet.`}
-          />
-        ) : (
-          posts.map((post) => (
+      {isOwnProfile && (
+        <nav aria-label="Account" className="mt-6 border-t">
+          <ProfileRow href="/bookmarks" icon={Bookmark} label="Saved" />
+          <ProfileRow href="/notifications" icon={Bell} label="Notifications" />
+          <ProfileRow href="/settings/account" icon={Settings} label="Account settings" />
+          <form action={logout}>
+            <button type="submit" className="hover:bg-accent/40 text-destructive flex w-full items-center gap-3 border-b px-4 py-3.5 text-left text-[15px] font-medium transition-colors">
+              <LogOut className="size-5" />
+              Log out
+            </button>
+          </form>
+        </nav>
+      )}
+
+      {posts.length > 0 && (
+        <div className="mt-4 border-t">
+          {posts.map((post) => (
             <PostCard key={post.id} post={post} isAuthenticated={Boolean(session)} viewerId={session?.userId} viewerRole={session?.role} />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ProfileRow({ href, icon: Icon, label }: { href: string; icon: typeof Bell; label: string }) {
+  return (
+    <Link href={href} className="hover:bg-accent/40 flex items-center gap-3 border-b px-4 py-3.5 text-[15px] font-medium transition-colors">
+      <Icon className="text-muted-foreground size-5" />
+      <span className="flex-1">{label}</span>
+      <ChevronRight className="text-muted-foreground size-4" />
+    </Link>
   );
 }
