@@ -10,7 +10,7 @@ import { checkRateLimit } from "@/lib/ratelimit";
 import { getMembership, getChannel, listChannelMessages, recordChannelMessageViews } from "@/lib/data/communities";
 import { publishToChannel } from "@/lib/realtime/ably-server";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { isCommunityManager } from "@/lib/community-roles";
+import { isCommunityManager, CHANNEL_SENDER_ID } from "@/lib/community-roles";
 import { isWithinEditWindow, EDIT_WINDOW_EXPIRED_MESSAGE } from "@/lib/message-edit";
 import { isMessageReactionEmoji } from "@/lib/reactions";
 import { toggleReactionCore } from "@/lib/actions/reaction-toggle";
@@ -119,11 +119,16 @@ const updateCommunitySchema = z.object({
   description: z.string().trim().max(500).optional(),
   avatarUrl: z.string().url().optional(),
   visibility: z.enum(["public", "private"]).optional(),
+  postAsChannel: z.boolean().optional(),
 });
 
 export async function updateCommunity(communityId: string, input: z.infer<typeof updateCommunitySchema>) {
   await requireCommunityRole(communityId, ["owner", "admin"]);
   const parsed = updateCommunitySchema.parse(input);
+  if (parsed.postAsChannel !== undefined) {
+    const [community] = await db.select({ kind: communities.kind }).from(communities).where(eq(communities.id, communityId)).limit(1);
+    if (community?.kind !== "channel") throw new Error("Posting identity only applies to channels.");
+  }
   await db.update(communities).set(parsed).where(eq(communities.id, communityId));
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
 }
@@ -178,6 +183,7 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   if (channel.kind === "channel" && !isCommunityManager(membership.role)) {
     throw new Error("Only admins can post in this channel.");
   }
+  const postedAsChannel = channel.kind === "channel" && channel.postAsChannel;
 
   // Scoped to this channel so a caller can't quote/leak a message id from a
   // different channel/community they happen to also be a member of.
@@ -218,6 +224,7 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
           .values({
             channelId: parsed.channelId,
             senderId: session.userId,
+            postedAsChannel,
             body: parsed.body,
             replyToMessageId: replyTo?.id,
             replyExcerpt: parsed.replyExcerpt,
@@ -246,7 +253,9 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   await publishToChannel(`channel:${parsed.channelId}`, "message", {
     id: message.id,
     body: message.body,
-    senderId: message.senderId,
+    // The broadcast reaches every member, so it never carries the admin's id for channel-identity posts.
+    senderId: postedAsChannel ? CHANNEL_SENDER_ID : message.senderId,
+    postedAsChannel,
     createdAt: message.createdAt.toISOString(),
     replyToMessageId: message.replyToMessageId,
     replyExcerpt: message.replyExcerpt,
@@ -254,7 +263,7 @@ export async function sendChannelMessage(input: z.infer<typeof sendChannelMessag
   });
 
   revalidatePath(COMMUNITY_LAYOUT_PATH, "layout");
-  return { ...message, editedAt: null, viewCount: 0, replyTo, reactions: [], sharedContact: null, poll: null, media };
+  return { ...message, postedAsChannel, editedAt: null, viewCount: 0, replyTo, reactions: [], sharedContact: null, poll: null, media };
 }
 
 const editChannelMessageSchema = z.object({
@@ -323,6 +332,7 @@ export async function shareChannelContact(channelId: string, contactUserId: stri
   if (channel.kind === "channel" && !isCommunityManager(membership.role)) {
     throw new Error("Only admins can post in this channel.");
   }
+  const postedAsChannel = channel.kind === "channel" && channel.postAsChannel;
 
   const [contact] = await db
     .select({ userId: profiles.userId, username: profiles.username, displayName: profiles.displayName, avatarUrl: profiles.avatarUrl })
@@ -333,13 +343,14 @@ export async function shareChannelContact(channelId: string, contactUserId: stri
 
   const [message] = await db
     .insert(channelMessages)
-    .values({ channelId, senderId: session.userId, body: "", sharedContactId: contactUserId })
+    .values({ channelId, senderId: session.userId, postedAsChannel, body: "", sharedContactId: contactUserId })
     .returning({ id: channelMessages.id, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId });
 
   await publishToChannel(`channel:${channelId}`, "message", {
     id: message.id,
     body: "",
-    senderId: message.senderId,
+    senderId: postedAsChannel ? CHANNEL_SENDER_ID : message.senderId,
+    postedAsChannel,
     createdAt: message.createdAt.toISOString(),
     replyToMessageId: null,
     replyExcerpt: null,
@@ -352,6 +363,7 @@ export async function shareChannelContact(channelId: string, contactUserId: stri
     body: "",
     createdAt: message.createdAt,
     senderId: message.senderId,
+    postedAsChannel,
     editedAt: null,
     viewCount: 0,
     replyToMessageId: null,
@@ -388,6 +400,7 @@ export async function createChannelPoll(input: z.infer<typeof createChannelPollS
   if (channel.kind === "channel" && !isCommunityManager(membership.role)) {
     throw new Error("Only admins can post in this channel.");
   }
+  const postedAsChannel = channel.kind === "channel" && channel.postAsChannel;
 
   const { message, poll, options } = await db.transaction(async (tx) => {
     const [poll] = await tx
@@ -400,7 +413,7 @@ export async function createChannelPoll(input: z.infer<typeof createChannelPollS
       .returning({ id: messagePollOptions.id, text: messagePollOptions.text });
     const [message] = await tx
       .insert(channelMessages)
-      .values({ channelId: parsed.channelId, senderId: session.userId, body: "", pollId: poll.id })
+      .values({ channelId: parsed.channelId, senderId: session.userId, postedAsChannel, body: "", pollId: poll.id })
       .returning({ id: channelMessages.id, createdAt: channelMessages.createdAt, senderId: channelMessages.senderId });
     return { message, poll, options };
   });
@@ -415,7 +428,8 @@ export async function createChannelPoll(input: z.infer<typeof createChannelPollS
   await publishToChannel(`channel:${parsed.channelId}`, "message", {
     id: message.id,
     body: "",
-    senderId: message.senderId,
+    senderId: postedAsChannel ? CHANNEL_SENDER_ID : message.senderId,
+    postedAsChannel,
     createdAt: message.createdAt.toISOString(),
     replyToMessageId: null,
     replyExcerpt: null,
@@ -428,6 +442,7 @@ export async function createChannelPoll(input: z.infer<typeof createChannelPollS
     body: "",
     createdAt: message.createdAt,
     senderId: message.senderId,
+    postedAsChannel,
     editedAt: null,
     viewCount: 0,
     replyToMessageId: null,
@@ -578,7 +593,7 @@ export async function loadOlderChannelMessages(channelId: string, cursor: string
   const membership = await getMembership(channel.communityId, session.userId);
   if (!membership) throw new Error("You're not a member of this community.");
 
-  return listChannelMessages(channelId, session.userId, cursor);
+  return listChannelMessages(channelId, session.userId, cursor, { hideChannelAuthors: !isCommunityManager(membership.role) });
 }
 
 /** Marks `messageIds` as seen by the caller — powers the channel eye-icon view count and the group read-tick parity. */

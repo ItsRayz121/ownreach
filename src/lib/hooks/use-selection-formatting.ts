@@ -21,7 +21,7 @@ export interface UseSelectionFormattingResult {
   /** Virtual anchor for a floating popover, or null when there's no active selection. */
   anchor: SelectionAnchor | null;
   close: () => void;
-  wrapSelection: (before: string, after?: string) => void;
+  wrapSelection: (before: string, after?: string, selectSuffix?: boolean) => void;
   clearFormatting: () => void;
 }
 
@@ -171,7 +171,7 @@ export function useSelectionFormatting(
   }, [textareaRef, updateSelection]);
 
   const wrapSelection = useCallback(
-    (before: string, after: string = before) => {
+    (before: string, after: string = before, selectSuffix = false) => {
       const el = textareaRef.current;
       if (!el) return;
       const { selectionStart, selectionEnd, value: current } = el;
@@ -180,7 +180,9 @@ export function useSelectionFormatting(
       onChange(next);
       requestAnimationFrame(() => {
         el.focus();
-        el.setSelectionRange(selectionStart + before.length, selectionStart + before.length + selected.length);
+        // For links the part worth editing next is the URL placeholder, not the label.
+        const start = selectionStart + before.length + (selectSuffix ? selected.length + 2 : 0);
+        el.setSelectionRange(start, selectSuffix ? start + after.length - 3 : start + selected.length);
         updateSelection();
       });
     },

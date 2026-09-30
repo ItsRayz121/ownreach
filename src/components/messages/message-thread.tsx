@@ -24,6 +24,7 @@ import { useMessageInteractions } from "@/lib/hooks/use-message-interactions";
 import { ChatViewport } from "./chat-viewport";
 import { MessageComposer } from "./message-composer";
 import { MessageBubble } from "./message-bubble";
+import { ForwardSheet } from "./forward-sheet";
 import { MessageActionsSheet, type MessageActions } from "./message-actions-sheet";
 import { MessagePressTarget } from "./message-press-target";
 import { MessageReactions } from "./message-reactions";
@@ -79,6 +80,8 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
     menuMessageId,
     menuOpen,
     setMenuOpen,
+    forwardBody,
+    setForwardBody,
     openMenu,
     clientId,
     handleToggleReaction,
@@ -262,6 +265,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
       onReact: (emoji) => handleToggleReaction(m.id, emoji),
       onReply: composerDisabled ? undefined : () => startReply(m),
       onCopy: m.body.trim() ? () => void handleCopy(m) : undefined,
+      onForward: m.body.trim() && !m.poll && !m.sharedContact && !m.media ? () => setForwardBody(m.body) : undefined,
       onEdit: editable ? () => handleEdit(m) : undefined,
       onDelete: mine ? () => handleDelete(m.id) : undefined,
     };
@@ -389,6 +393,7 @@ export function MessageThread({ conversationId, viewerId, other, initialMessages
       />
 
       <MessageActionsSheet open={menuOpen && Boolean(menuMessage)} onOpenChange={setMenuOpen} actions={menuMessage ? actionsFor(menuMessage) : {}} />
+      <ForwardSheet body={forwardBody} onClose={() => setForwardBody(null)} />
     </ChatViewport>
   );
 }

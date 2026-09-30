@@ -1,4 +1,4 @@
-import { foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./users";
 import { messagePolls } from "./polls";
 import { messageMedia } from "./media";
@@ -19,6 +19,9 @@ export const communities = pgTable(
     // "group": any member can post in the channel. "channel": only owner/admins
     // can post, everyone else is read-only (broadcast mode).
     kind: communityKindEnum("kind").notNull().default("group"),
+    // Broadcast channels only: when true, admin posts show the channel (its logo
+    // and name) as the sender and hide which admin wrote them from members.
+    postAsChannel: boolean("post_as_channel").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("communities_visibility_created_idx").on(table.visibility, table.createdAt)]
@@ -76,6 +79,10 @@ export const channelMessages = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    // Set when the message was posted under the channel identity (see
+    // communities.postAsChannel) — fixed at send time so later toggling the
+    // setting does not rewrite history.
+    postedAsChannel: boolean("posted_as_channel").notNull().default(false),
     // Nullable, self-referencing "reply to" — see messages.replyToMessageId.
     replyToMessageId: uuid("reply_to_message_id"),
     replyExcerpt: text("reply_excerpt"),

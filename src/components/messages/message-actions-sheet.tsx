@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Pencil, Reply, Trash2 } from "lucide-react";
+import { Copy, Forward, Pencil, Reply, Trash2 } from "lucide-react";
 import { BottomSheet, BottomSheetContent } from "@/components/ui/bottom-sheet";
 import { MESSAGE_REACTION_EMOJIS } from "@/lib/reactions";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ export interface MessageActions {
   onReact?: (emoji: string) => void;
   onReply?: () => void;
   onCopy?: () => void;
+  onForward?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
 }
@@ -22,12 +23,11 @@ interface MessageActionsSheetProps {
   actions: MessageActions;
 }
 
-// Context menu for a single message, opened by long-press (touch) or
-// right-click / the hover button (desktop). Only the actions the caller
+// Action menu for a single message, opened by tapping it (or the desktop hover button). Only the actions the caller
 // passes are rendered, so permissions are decided by the thread, not here.
 export function MessageActionsSheet({ open, onOpenChange, actions }: MessageActionsSheetProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const { activeEmoji, onReact, onReply, onCopy, onEdit, onDelete } = actions;
+  const { activeEmoji, onReact, onReply, onCopy, onForward, onEdit, onDelete } = actions;
 
   function close() {
     onOpenChange(false);
@@ -70,6 +70,7 @@ export function MessageActionsSheet({ open, onOpenChange, actions }: MessageActi
         <div className={cn("flex flex-col px-2 pb-1", onReact && "border-t pt-1")}>
           {onReply && <ActionRow icon={Reply} label="Reply" onClick={() => run(onReply)} />}
           {onCopy && <ActionRow icon={Copy} label="Copy" onClick={() => run(onCopy)} />}
+          {onForward && <ActionRow icon={Forward} label="Forward" onClick={() => run(onForward)} />}
           {onEdit && <ActionRow icon={Pencil} label="Edit" onClick={() => run(onEdit)} />}
           {onDelete &&
             (confirmingDelete ? (

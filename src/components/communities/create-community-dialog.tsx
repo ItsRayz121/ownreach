@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { headerActionClassName } from "@/components/shell/list-header";
 import {
   Dialog,
   DialogContent,
@@ -35,10 +34,9 @@ function slugify(name: string) {
 
 interface CreateCommunityDialogProps {
   defaultKind?: "group" | "channel";
-  iconOnly?: boolean;
 }
 
-export function CreateCommunityDialog({ defaultKind = "group", iconOnly = false }: CreateCommunityDialogProps) {
+export function CreateCommunityDialog({ defaultKind = "group" }: CreateCommunityDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -87,19 +85,10 @@ export function CreateCommunityDialog({ defaultKind = "group", iconOnly = false 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {iconOnly ? (
-        <DialogTrigger
-          render={<button type="button" className={headerActionClassName} />}
-          aria-label={defaultKind === "channel" ? "Create channel" : "Create group"}
-        >
-          <Plus className="size-5" />
-        </DialogTrigger>
-      ) : (
-        <DialogTrigger render={<Button className="gap-2" />}>
-          <Plus className="size-4" />
-          {defaultKind === "channel" ? "Create channel" : "Create group"}
-        </DialogTrigger>
-      )}
+      <DialogTrigger render={<Button className="gap-2" />}>
+        <Plus className="size-4" />
+        {defaultKind === "channel" ? "Create channel" : "Create group"}
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{kind === "channel" ? "Create a channel" : "Create a group"}</DialogTitle>

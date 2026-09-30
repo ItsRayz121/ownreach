@@ -18,6 +18,7 @@ export default async function ProfileSettingsPage() {
 
   return (
     <div>
+      <h1 className="border-b px-4 py-4 text-xl font-semibold">Edit profile</h1>
       <ProfileEditForm profile={profile} />
 
       <div className="border-t px-4 py-6">

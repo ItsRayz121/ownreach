@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark, Settings, BarChart3, Bell, ChevronRight } from "lucide-react";
+import { CalendarDays, LinkIcon, MapPin, BadgeCheck, FileText, Bookmark, Settings, BarChart3 } from "lucide-react";
 import { verifySession } from "@/lib/auth/session";
 import { getProfileByUsername, getProfileCounts, getSocialLinks } from "@/lib/data/profiles";
 import { isFollowing } from "@/lib/data/follows";
@@ -14,7 +14,7 @@ import { PostCard } from "@/components/post/post-card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { SocialIcon } from "@/components/social-icon";
-import { ThemeSetting } from "@/components/settings/theme-setting";
+import { ProfileHeaderActions } from "@/components/shell/profile-header-actions";
 import { SOCIAL_PLATFORM_LABELS } from "@/lib/social-platforms";
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string }> }) {
@@ -66,6 +66,8 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
               <Button render={<Link href="/settings/analytics" aria-label="Analytics" />} nativeButton={false} variant="outline" size="icon">
                 <BarChart3 className="size-4" />
               </Button>
+              {/* Phones get these in the top bar; it is hidden on desktop. */}
+              <ProfileHeaderActions userId={session?.userId} unreadNotifications={unreadNotifications} className="hidden items-center md:flex" />
             </div>
           ) : session ? (
             <div className="flex items-center gap-2">
@@ -142,27 +144,6 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
           </span>
         </div>
       </div>
-
-      {isOwnProfile && (
-        // Account-level controls live here rather than in the Chats / Groups /
-        // Channels headers.
-        <div className="mx-4 mt-4 divide-y overflow-hidden rounded-xl border">
-          <Link href="/notifications" className="hover:bg-accent/40 flex items-center justify-between gap-3 px-4 py-3 transition-colors">
-            <span className="flex items-center gap-3 text-[15px] font-medium">
-              <span className="relative">
-                <Bell className="text-muted-foreground size-5" />
-                {unreadNotifications > 0 && <span className="bg-primary absolute -top-0.5 -right-0.5 size-2 rounded-full" />}
-              </span>
-              Notifications
-            </span>
-            <span className="text-muted-foreground flex items-center gap-2 text-sm">
-              {unreadNotifications > 0 && <span className="bg-primary text-primary-foreground rounded-full px-2 py-0.5 text-xs font-semibold">{unreadNotifications > 99 ? "99+" : unreadNotifications} new</span>}
-              <ChevronRight className="size-4" />
-            </span>
-          </Link>
-          <ThemeSetting />
-        </div>
-      )}
 
       <div className="mt-4 border-t">
         {posts.length === 0 ? (

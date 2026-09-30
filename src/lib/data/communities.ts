@@ -11,6 +11,7 @@ import {
   profiles,
   type CommunityMember,
 } from "@/db/schema";
+import { CHANNEL_SENDER_ID } from "@/lib/community-roles";
 import { buildReplyMap, buildReactionMap } from "./reply-reactions";
 import { buildContactMap, type SharedContactSummary } from "./shared-contacts";
 import { buildPollMap, type PollSummary } from "./polls";
@@ -49,7 +50,10 @@ export interface ChannelMessageItem {
   id: string;
   body: string;
   createdAt: Date;
+  /** {@link CHANNEL_SENDER_ID} instead of the real author when `postedAsChannel` and the viewer is not a manager. */
   senderId: string;
+  /** Posted under the channel identity: render the channel logo/name, not a person. */
+  postedAsChannel: boolean;
   editedAt: Date | null;
   /** Unique viewers — an eye-icon count for `kind: "channel"`, or read-tick parity (vs. member count) for `kind: "group"`. */
   viewCount: number;
@@ -282,6 +286,7 @@ export async function getChannel(channelId: string) {
       name: channels.name,
       description: channels.description,
       kind: communities.kind,
+      postAsChannel: communities.postAsChannel,
     })
     .from(channels)
     .innerJoin(communities, eq(communities.id, channels.communityId))
@@ -294,7 +299,7 @@ export async function getChannel(channelId: string) {
 function attachChannelReplyPreviews(channelId: string, rows: { id: string; body: string; senderId: string; replyToMessageId: string | null }[]) {
   return buildReplyMap(rows, (ids) =>
     db
-      .select({ id: channelMessages.id, body: channelMessages.body, senderId: channelMessages.senderId })
+      .select({ id: channelMessages.id, body: channelMessages.body, senderId: channelMessages.senderId, postedAsChannel: channelMessages.postedAsChannel })
       .from(channelMessages)
       .where(and(inArray(channelMessages.id, ids), eq(channelMessages.channelId, channelId)))
   );
@@ -318,7 +323,8 @@ function attachChannelReactions(messageIds: string[]) {
 export async function listChannelMessages(
   channelId: string,
   viewerId: string,
-  cursor?: string
+  cursor?: string,
+  { hideChannelAuthors = false }: { hideChannelAuthors?: boolean } = {}
 ): Promise<{ items: ChannelMessageItem[]; nextCursor: string | null }> {
   const decoded = decodeCursor(cursor);
   const cursorFilter = decoded
@@ -334,6 +340,7 @@ export async function listChannelMessages(
       body: channelMessages.body,
       createdAt: channelMessages.createdAt,
       senderId: channelMessages.senderId,
+      postedAsChannel: channelMessages.postedAsChannel,
       editedAt: channelMessages.editedAt,
       replyToMessageId: channelMessages.replyToMessageId,
       replyExcerpt: channelMessages.replyExcerpt,
@@ -359,15 +366,20 @@ export async function listChannelMessages(
     buildPollMap(ordered, viewerId),
     buildMediaMap(ordered),
   ]);
+  const authorOf = (senderId: string, postedAsChannel: boolean) => (hideChannelAuthors && postedAsChannel ? CHANNEL_SENDER_ID : senderId);
   return {
-    items: ordered.map((r) => ({
+    items: ordered.map((r) => {
+      const original = r.replyToMessageId ? replyMap.get(r.replyToMessageId) : undefined;
+      return {
       ...r,
-      replyTo: r.replyToMessageId ? (replyMap.get(r.replyToMessageId) ?? null) : null,
+      senderId: authorOf(r.senderId, r.postedAsChannel),
+      replyTo: original ? { id: original.id, body: original.body, senderId: authorOf(original.senderId, original.postedAsChannel) } : null,
       reactions: reactionMap.get(r.id) ?? [],
       sharedContact: r.sharedContactId ? (contactMap.get(r.sharedContactId) ?? null) : null,
       poll: r.pollId ? (pollMap.get(r.pollId) ?? null) : null,
       media: r.mediaId ? (mediaMap.get(r.mediaId) ?? null) : null,
-    })),
+      };
+    }),
     nextCursor,
   };
 }

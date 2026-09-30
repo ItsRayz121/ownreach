@@ -14,42 +14,35 @@ interface MagicPencilState {
 interface SelectionToolbarProps {
   anchor: SelectionAnchor | null;
   onClose: () => void;
-  wrapSelection: (before: string, after?: string) => void;
+  wrapSelection: (before: string, after?: string, selectSuffix?: boolean) => void;
   clearFormatting: () => void;
   magicPencil?: MagicPencilState;
+  /**
+   * "popover" floats over the selection. "bar" is a fixed row the caller places
+   * itself: always rendered, with the buttons disabled while nothing is selected.
+   */
+  variant?: "popover" | "bar";
 }
 
-// Floating format popup that appears when text is selected in a composer —
-// layered on top of any static toolbar, not a replacement for it (touch
-// selection doesn't always give a clean popup, so the static row stays the
-// reliable fallback).
-export function SelectionToolbar({ anchor, onClose, wrapSelection, clearFormatting, magicPencil }: SelectionToolbarProps) {
+// Format actions for text selected in a composer. As a popover it is layered
+// on top of any static toolbar; as a bar it sits in a fixed spot instead, so
+// it can't collide with the native Android/iOS selection menu (Cut / Copy /
+// Paste / Select all), which floats above the selected text.
+export function SelectionToolbar({ anchor, onClose, wrapSelection, clearFormatting, magicPencil, variant = "popover" }: SelectionToolbarProps) {
+  if (variant === "bar") {
+    return (
+      <div role="toolbar" aria-label="Text formatting" className="flex items-center justify-around gap-0.5 border-t px-2 py-1">
+        <FormatButtons wrapSelection={wrapSelection} clearFormatting={clearFormatting} disabled={anchor === null} />
+      </div>
+    );
+  }
+
   return (
     <Popover open={anchor !== null} onOpenChange={(open) => !open && onClose()}>
       <PopoverPortal>
         <PopoverPositioner anchor={anchor} side="top" sideOffset={8}>
           <PopoverPopup className="flex items-center gap-0.5 p-1" initialFocus={false} finalFocus={false}>
-            <ToolbarButton label="Bold" onClick={() => wrapSelection("**")}>
-              <Bold className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton label="Italic" onClick={() => wrapSelection("*")}>
-              <Italic className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton label="Underline" onClick={() => wrapSelection("__")}>
-              <Underline className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton label="Strikethrough" onClick={() => wrapSelection("~~")}>
-              <Strikethrough className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton label="Code" onClick={() => wrapSelection("`")}>
-              <Code className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton label="Link" onClick={() => wrapSelection("[", "](https://)")}>
-              <Link2 className="size-4" />
-            </ToolbarButton>
-            <ToolbarButton label="Regular (clear formatting)" onClick={clearFormatting}>
-              <RemoveFormatting className="size-4" />
-            </ToolbarButton>
+            <FormatButtons wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
             {magicPencil?.active && (
               <>
                 <div className="mx-0.5 h-5 w-px bg-border" />
@@ -65,7 +58,39 @@ export function SelectionToolbar({ anchor, onClose, wrapSelection, clearFormatti
   );
 }
 
-function ToolbarButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+function FormatButtons({
+  wrapSelection,
+  clearFormatting,
+  disabled,
+}: Pick<SelectionToolbarProps, "wrapSelection" | "clearFormatting"> & { disabled?: boolean }) {
+  return (
+    <>
+      <ToolbarButton label="Bold" disabled={disabled} onClick={() => wrapSelection("**")}>
+        <Bold className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label="Italic" disabled={disabled} onClick={() => wrapSelection("*")}>
+        <Italic className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label="Underline" disabled={disabled} onClick={() => wrapSelection("__")}>
+        <Underline className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label="Strikethrough" disabled={disabled} onClick={() => wrapSelection("~~")}>
+        <Strikethrough className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label="Code" disabled={disabled} onClick={() => wrapSelection("`")}>
+        <Code className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label="Create link" disabled={disabled} onClick={() => wrapSelection("[", "](https://)", true)}>
+        <Link2 className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label="Regular (clear formatting)" disabled={disabled} onClick={clearFormatting}>
+        <RemoveFormatting className="size-4" />
+      </ToolbarButton>
+    </>
+  );
+}
+
+function ToolbarButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
     <Button
       type="button"
@@ -73,6 +98,7 @@ function ToolbarButton({ label, onClick, children }: { label: string; onClick: (
       size="icon-sm"
       aria-label={label}
       title={label}
+      disabled={disabled}
       // Prevent the textarea from losing focus/selection when a toolbar button is pressed.
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}

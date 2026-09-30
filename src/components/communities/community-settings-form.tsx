@@ -18,6 +18,7 @@ export function CommunitySettingsForm({ community, canDelete }: { community: Com
   const [name, setName] = useState(community.name);
   const [description, setDescription] = useState(community.description ?? "");
   const [visibility, setVisibility] = useState(community.visibility);
+  const [postAsChannel, setPostAsChannel] = useState(community.postAsChannel);
   const [avatarUrl, setAvatarUrl] = useState(community.avatarUrl);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -44,7 +45,10 @@ export function CommunitySettingsForm({ community, canDelete }: { community: Com
   function handleSave() {
     startTransition(async () => {
       try {
-        await updateCommunity(community.id, { name: name.trim(), description: description.trim() || undefined, visibility });
+        await updateCommunity(community.id, { name: name.trim(), description: description.trim() || undefined,
+          visibility,
+          ...(community.kind === "channel" ? { postAsChannel } : {}),
+        });
         toast.success("Saved.");
         router.refresh();
       } catch (error) {
@@ -136,6 +140,31 @@ export function CommunitySettingsForm({ community, canDelete }: { community: Com
           </button>
         </div>
       </div>
+      {community.kind === "channel" && (
+        <div>
+          <Label>Posting identity</Label>
+          <div className="mt-1 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPostAsChannel(false)}
+              aria-pressed={!postAsChannel}
+              className={cn("flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors", !postAsChannel ? "border-primary bg-accent" : "hover:bg-accent/50")}
+            >
+              <p className="font-medium">Post as myself</p>
+              <p className="text-muted-foreground text-xs">Posts show the admin who wrote them</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPostAsChannel(true)}
+              aria-pressed={postAsChannel}
+              className={cn("flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors", postAsChannel ? "border-primary bg-accent" : "hover:bg-accent/50")}
+            >
+              <p className="font-medium">Post as channel</p>
+              <p className="text-muted-foreground text-xs">Shows the channel logo and name; members can&apos;t see which admin posted</p>
+            </button>
+          </div>
+        </div>
+      )}
       <Button onClick={handleSave} disabled={isPending || !name.trim()} className="self-start">
         {isPending ? "Saving…" : "Save changes"}
       </Button>

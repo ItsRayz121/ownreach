@@ -26,7 +26,9 @@ export default async function AccountSettingsPage() {
   const linkedProviders = new Set(linked.map((a) => a.provider));
 
   return (
-    <div className="px-4 py-6">
+    <div>
+      <h1 className="border-b px-4 py-4 text-xl font-semibold">Settings</h1>
+      <div className="px-4 py-6">
       <h2 className="text-sm font-semibold">Connected accounts</h2>
       <p className="text-muted-foreground mt-1 mb-4 text-sm">
         Link multiple sign-in methods to the same account — your identity, followers, and posts stay put even if you
@@ -52,6 +54,7 @@ export default async function AccountSettingsPage() {
         {!linkedProviders.has("telegram") && <TelegramLoginButton link />}
         {!linkedProviders.has("wallet") && <WalletConnectButton link />}
         {linkedProviders.has("password") ? <ChangePasswordForm /> : <SetPasswordForm />}
+      </div>
       </div>
     </div>
   );

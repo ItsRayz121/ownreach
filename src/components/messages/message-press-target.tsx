@@ -1,7 +1,6 @@
 "use client";
 
 import { MoreHorizontal } from "lucide-react";
-import { useLongPress } from "@/lib/hooks/use-long-press";
 import { cn } from "@/lib/utils";
 
 interface MessagePressTargetProps {
@@ -14,24 +13,26 @@ interface MessagePressTargetProps {
   children: React.ReactNode;
 }
 
-// Wraps a message bubble so it opens the message menu on long-press (touch)
-// or right-click, with a hover-only "…" button on desktop for people who
-// don't know to right-click. Nothing is drawn permanently under the message.
+// Anything inside a message that already does something when tapped (links,
+// reaction chips, poll options, delete-photo…) keeps doing it instead of
+// opening the menu.
+const INTERACTIVE_SELECTOR = "a, button, input, textarea, select, summary, [role='button'], [data-no-message-menu]";
+
+// Wraps a message bubble so a single tap opens the message menu. Long-press is
+// left to the browser so text can be selected with the native handles; a tap
+// that lands while text is selected just dismisses the selection. A hover-only
+// "…" button covers desktop and keyboard users.
 export function MessagePressTarget({ onOpenMenu, mine, disabled, className, children }: MessagePressTargetProps) {
-  const press = useLongPress(onOpenMenu);
+  function handleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (disabled) return;
+    if ((e.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
+    if (window.getSelection()?.toString()) return;
+    onOpenMenu();
+  }
 
   return (
     <div className={cn("group/press relative", className)}>
-      <div
-        {...(disabled ? {} : press)}
-        // Long-press shouldn't select text or pop the OS link/image callout on
-        // touch screens — the menu's Copy replaces both. Mouse selection is
-        // left alone so desktop users can still highlight and quote.
-        className="[@media(pointer:coarse)]:select-none"
-        style={{ WebkitTouchCallout: "none" }}
-      >
-        {children}
-      </div>
+      <div onClick={handleClick}>{children}</div>
       {!disabled && (
         <button
           type="button"

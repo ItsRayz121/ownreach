@@ -65,12 +65,14 @@ export function useMessageInteractions<T extends InteractiveMessage>({
 }: UseMessageInteractionsOptions<T>) {
   const [replyTarget, setReplyTarget] = useState<ComposerReplyTarget | null>(null);
   const [editTarget, setEditTarget] = useState<ComposerEditTarget | null>(null);
-  // Which message the long-press/right-click menu is for. Holds the id, not
+  // Which message the tap menu is for. Holds the id, not
   // the message, so the menu always reads the live (reactions, edits) copy;
   // the id outlives `menuOpen` so the sheet keeps its content while it
   // animates closed.
   const [menuMessageId, setMenuMessageId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Text of the message being forwarded; the forward picker is open while set.
+  const [forwardBody, setForwardBody] = useState<string | null>(null);
   // Identifies this tab's votes in the realtime "poll-vote" echo, so only the
   // exact tab that cast a vote skips re-applying it — a second open tab for
   // the same account still needs the broadcast (see handleVote/thread's
@@ -208,6 +210,8 @@ export function useMessageInteractions<T extends InteractiveMessage>({
     menuMessageId,
     menuOpen,
     setMenuOpen,
+    forwardBody,
+    setForwardBody,
     openMenu,
     clientId,
     handleToggleReaction,

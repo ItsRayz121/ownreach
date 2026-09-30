@@ -76,6 +76,7 @@ export function ComposerBase<TMessage>({
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -246,6 +247,8 @@ export function ComposerBase<TMessage>({
               setBody(e.target.value.slice(0, MAX_LENGTH));
             }}
             onPaste={magicPencil.handlePaste}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             onKeyDown={(e) => {
               // Enter sends with a hardware keyboard; on a touch keyboard it
               // inserts a newline and the Send button sends, as in other
@@ -263,7 +266,6 @@ export function ComposerBase<TMessage>({
             rows={1}
             className="bg-muted/40 max-h-36 min-h-10 resize-none overflow-y-auto rounded-2xl px-3.5 py-2 leading-normal"
           />
-          <SelectionToolbar anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
         </div>
         <Button
           className="size-10 rounded-full"
@@ -276,6 +278,10 @@ export function ComposerBase<TMessage>({
           {editTarget ? <Check className="size-5" /> : <Send className="size-5" />}
         </Button>
       </div>
+
+      {focused && (
+        <SelectionToolbar variant="bar" anchor={anchor} onClose={closeToolbar} wrapSelection={wrapSelection} clearFormatting={clearFormatting} />
+      )}
 
       <BottomSheet open={menuOpen} onOpenChange={setMenuOpen}>
         <BottomSheetContent title="Add to message">

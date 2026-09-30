@@ -28,7 +28,7 @@ export default async function ChannelPage({
   const membership = await getMembership(community.id, session.userId);
   if (!membership) redirect(`/communities/${community.slug}`);
 
-  const [members, { items, nextCursor }] = await Promise.all([listMembers(community.id), listChannelMessages(channelId, session.userId)]);
+  const [members, { items, nextCursor }] = await Promise.all([listMembers(community.id), listChannelMessages(channelId, session.userId, undefined, { hideChannelAuthors: !isCommunityManager(membership.role) })]);
 
   const canManage = isCommunityManager(membership.role);
   const canPost = channel.kind === "channel" ? canManage : true;

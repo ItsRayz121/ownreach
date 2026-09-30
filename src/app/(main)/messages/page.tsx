@@ -6,8 +6,7 @@ import { listConversations } from "@/lib/data/messages";
 import { searchProfiles } from "@/lib/data/profiles";
 import { UserAvatar } from "@/components/user-avatar";
 import { EmptyState } from "@/components/empty-state";
-import { ListHeader, SearchField, FilterChipRow, filterChipClassName, ChipCount } from "@/components/shell/list-header";
-import { NewChatButton } from "@/components/messages/new-chat-button";
+import { ListHeader, FilterChipRow, filterChipClassName, ChipCount } from "@/components/shell/list-header";
 import { StartConversationRow } from "@/components/messages/start-conversation-row";
 import { MessageRequestRow } from "@/components/messages/message-request-row";
 import { formatRelativeTime } from "@/lib/format";
@@ -50,11 +49,15 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <ListHeader title="Chats" action={<NewChatButton />}>
-        <form action="/messages" role="search">
-          {filter !== "all" && <input type="hidden" name="filter" value={filter} />}
-          <SearchField name="q" defaultValue={query} placeholder="Search chats or @username" aria-label="Search chats" />
-        </form>
+      <ListHeader
+        title="Chats"
+        searchPlaceholder="Search chats or @username"
+        searchInputProps={{ name: "q", defaultValue: query }}
+        searchFormAction="/messages"
+        searchFormFields={filter !== "all" ? { filter } : undefined}
+        searchOpen={Boolean(query)}
+        searchCloseHref={chipHref(filter)}
+      >
         <FilterChipRow>
           <FilterChip href={chipHref("all", query)} active={filter === "all"} label="All" />
           <FilterChip href={chipHref("unread", query)} active={filter === "unread"} label="Unread" />
@@ -112,7 +115,7 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
                 ? "Requests from people you don't follow back will show up here."
                 : filter === "unread"
                   ? "Chats with unread messages will show up here."
-                  : "Tap + to find someone by name or @username, or visit a profile and tap Message."
+                  : "Tap the search icon to find someone by name or @username, or visit a profile and tap Message."
             }
           />
         )

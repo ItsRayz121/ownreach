@@ -37,7 +37,9 @@ export default async function AnalyticsSettingsPage({
   ]);
 
   return (
-    <div className="space-y-8 px-4 py-6">
+    <div>
+      <h1 className="border-b px-4 py-4 text-xl font-semibold">Analytics</h1>
+      <div className="space-y-8 px-4 py-6">
       <AnalyticsRangeTabs current={range} />
 
       <section>
@@ -86,6 +88,7 @@ export default async function AnalyticsSettingsPage({
           Export followers (CSV)
         </a>
       </section>
+      </div>
     </div>
   );
 }

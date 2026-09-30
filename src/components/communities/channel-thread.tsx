@@ -15,6 +15,7 @@ import {
 } from "@/lib/actions/communities";
 import { votePoll } from "@/lib/actions/polls";
 import { isWithinEditWindow } from "@/lib/message-edit";
+import { CHANNEL_SENDER_ID } from "@/lib/community-roles";
 import { applyReactionEvent } from "@/lib/reactions";
 import { applyPollVoteEvent } from "@/lib/poll-votes";
 import { useAblyChannel } from "@/lib/hooks/use-ably-channel";
@@ -23,6 +24,7 @@ import { MemberAvatarStack } from "./member-avatar-stack";
 import { ChannelComposer } from "./channel-composer";
 import { ChatViewport } from "@/components/messages/chat-viewport";
 import { MessageBubble } from "@/components/messages/message-bubble";
+import { ForwardSheet } from "@/components/messages/forward-sheet";
 import { MessageActionsSheet, type MessageActions } from "@/components/messages/message-actions-sheet";
 import { MessagePressTarget } from "@/components/messages/message-press-target";
 import { MessageReactions } from "@/components/messages/message-reactions";
@@ -81,6 +83,7 @@ export function ChannelThread({
 
   function senderName(senderId: string) {
     if (senderId === viewerId) return "You";
+    if (senderId === CHANNEL_SENDER_ID) return channelName;
     return senderMap.get(senderId)?.displayName ?? "Member";
   }
 
@@ -92,6 +95,8 @@ export function ChannelThread({
     menuMessageId,
     menuOpen,
     setMenuOpen,
+    forwardBody,
+    setForwardBody,
     openMenu,
     clientId,
     handleToggleReaction,
@@ -136,8 +141,13 @@ export function ChannelThread({
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, []);
 
-  function appendMessage(message: ChannelMessageItem) {
-    setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+  // `authoritative` is the sender's own server response: it carries the real
+  // author, so it replaces a realtime echo that arrived first with the
+  // channel-identity stand-in id (which would otherwise hide edit rights).
+  function appendMessage(message: ChannelMessageItem, authoritative = false) {
+    setMessages((prev) =>
+      prev.some((m) => m.id === message.id) ? (authoritative ? prev.map((m) => (m.id === message.id ? { ...m, senderId: message.senderId } : m)) : prev) : [...prev, message]
+    );
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }));
   }
 
@@ -145,6 +155,7 @@ export function ChannelThread({
     id: string;
     body: string;
     senderId: string;
+    postedAsChannel?: boolean;
     createdAt: string;
     replyToMessageId: string | null;
     replyExcerpt: string | null;
@@ -155,6 +166,7 @@ export function ChannelThread({
     const replyToSource = data.replyToMessageId ? messages.find((m) => m.id === data.replyToMessageId) : undefined;
     appendMessage({
       ...data,
+      postedAsChannel: data.postedAsChannel ?? false,
       createdAt: new Date(data.createdAt),
       editedAt: null,
       viewCount: 0,
@@ -221,6 +233,7 @@ export function ChannelThread({
       onReact: (emoji) => handleToggleReaction(m.id, emoji),
       onReply: canPost ? () => startReply(m) : undefined,
       onCopy: m.body.trim() ? () => void handleCopy(m) : undefined,
+      onForward: m.body.trim() && !m.poll && !m.sharedContact && !m.media ? () => setForwardBody(m.body) : undefined,
       onEdit: editable ? () => handleEdit(m) : undefined,
       onDelete: mine || canManage ? () => handleDelete(m.id) : undefined,
     };
@@ -277,21 +290,24 @@ export function ChannelThread({
         )}
         {messages.map((m) => {
           const mine = m.senderId === viewerId;
-          const sender = senderMap.get(m.senderId);
+          // Channel-identity posts read as the channel's, even to the admin who wrote them.
+          const asChannel = m.postedAsChannel;
+          const alignRight = mine && !asChannel;
+          const sender = asChannel ? { displayName: channelName, avatarUrl } : senderMap.get(m.senderId);
           return (
-            <div key={m.id} data-message-id={m.id} className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
-              {!mine && <UserAvatar src={sender?.avatarUrl} name={sender?.displayName ?? "Member"} className="size-7 shrink-0" />}
+            <div key={m.id} data-message-id={m.id} className={cn("flex items-end gap-2", alignRight ? "justify-end" : "justify-start")}>
+              {!alignRight && <UserAvatar src={sender?.avatarUrl} name={sender?.displayName ?? "Member"} className="size-7 shrink-0" />}
               <MessagePressTarget
-                mine={mine}
+                mine={alignRight}
                 onOpenMenu={() => openMenu(m.id)}
                 // The row also holds the avatar, so its share of the width is
                 // taken off the cap — bubbles then line up with DMs.
-                className={cn("min-w-0", mine ? "max-w-[88%] md:max-w-[75%]" : "max-w-[calc(88%-2.5rem)] md:max-w-[calc(75%-2.5rem)]")}
+                className={cn("min-w-0", alignRight ? "max-w-[88%] md:max-w-[75%]" : "max-w-[calc(88%-2.5rem)] md:max-w-[calc(75%-2.5rem)]")}
               >
                 <MessageBubble
                   message={m}
-                  mine={mine}
-                  senderLabel={mine ? undefined : (sender?.displayName ?? "Member")}
+                  mine={alignRight}
+                  senderLabel={alignRight ? undefined : (sender?.displayName ?? "Member")}
                   replySenderName={m.replyTo ? senderName(m.replyTo.senderId) : undefined}
                   onJumpToReply={() => m.replyToMessageId && scrollToMessage(m.replyToMessageId)}
                   onVote={m.poll ? (optionId) => handleVote(m.poll!.id, optionId) : undefined}
@@ -308,7 +324,7 @@ export function ChannelThread({
                     </>
                   }
                 />
-                <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={mine} />
+                <MessageReactions reactions={m.reactions} viewerId={viewerId} onToggle={(emoji) => handleToggleReaction(m.id, emoji)} mine={alignRight} />
               </MessagePressTarget>
             </div>
           );
@@ -319,7 +335,7 @@ export function ChannelThread({
       {canPost ? (
         <ChannelComposer
           channelId={channelId}
-          onSent={appendMessage}
+          onSent={(message) => appendMessage(message, true)}
           replyTarget={replyTarget}
           onCancelReply={() => setReplyTarget(null)}
           editTarget={editTarget}
@@ -331,6 +347,7 @@ export function ChannelThread({
       )}
 
       <MessageActionsSheet open={menuOpen && Boolean(menuMessage)} onOpenChange={setMenuOpen} actions={menuMessage ? actionsFor(menuMessage) : {}} />
+      <ForwardSheet body={forwardBody} onClose={() => setForwardBody(null)} />
     </ChatViewport>
   );
 }
