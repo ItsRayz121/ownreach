@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/brand/logo";
 import { GoogleButton } from "@/components/auth/google-button";
 import { TelegramLoginButton } from "@/components/auth/telegram-login-button";
 import { WalletConnectButton } from "@/components/auth/wallet-connect-button";
@@ -31,8 +32,8 @@ export default async function LoginPage({
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-10 text-center">
-          <Link href="/" className="text-2xl font-semibold tracking-tight">
-            OwnReach
+          <Link href="/" aria-label="OwnReach home" className="inline-block">
+            <Logo size={56} className="flex-col gap-3" textClassName="text-3xl" />
           </Link>
           <p className="text-muted-foreground mt-2 text-sm text-balance">
             Own your reach. Keep your community.

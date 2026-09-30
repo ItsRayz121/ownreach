@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/brand/logo";
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 
 export const metadata = { title: "Set a new password / OwnReach", robots: { index: false } };
@@ -14,8 +15,8 @@ export default async function ResetPasswordPage({
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-10 text-center">
-          <Link href="/" className="text-2xl font-semibold tracking-tight">
-            OwnReach
+          <Link href="/" aria-label="OwnReach home" className="inline-block">
+            <Logo size={56} className="flex-col gap-3" textClassName="text-3xl" />
           </Link>
           <p className="text-muted-foreground mt-2 text-sm text-balance">Choose a new password.</p>
         </div>

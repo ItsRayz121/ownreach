@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { ProfileHeaderActions } from "./profile-header-actions";
 
 interface MobileTopBarProps {
@@ -24,8 +25,8 @@ export function MobileTopBar({ userId, username, isAdmin = false, unreadNotifica
 
   return (
     <header className="bg-background/95 pt-safe supports-backdrop-filter:bg-background/80 sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3 backdrop-blur md:hidden">
-      <Link href={username ? "/messages" : "/"} className="text-lg font-semibold tracking-tight">
-        OwnReach
+      <Link href={username ? "/messages" : "/"} aria-label="OwnReach">
+        <Logo size={30} textClassName="text-lg" />
       </Link>
       <div className="flex items-center">
         {isAdmin && (

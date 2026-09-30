@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Users, Radio, MessageSquare, ShieldCheck } from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { verifySession } from "@/lib/auth/session";
 
@@ -11,7 +12,7 @@ export default async function LandingPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-6">
-        <span className="text-lg font-semibold tracking-tight">OwnReach</span>
+        <Logo size={36} textClassName="text-xl" />
         <Button render={<Link href="/login" />} nativeButton={false} variant="outline">
           Log in
         </Button>

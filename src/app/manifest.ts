@@ -8,12 +8,12 @@ export default function manifest(): MetadataRoute.Manifest {
       "A creator-first social network for building, messaging, and retaining your audience without depending entirely on one platform.",
     start_url: "/messages",
     display: "standalone",
-    background_color: "#fafaff",
-    theme_color: "#1a1d24",
+    background_color: "#ffffff",
+    theme_color: "#ffffff",
     icons: [
-      { src: "/icon", sizes: "192x192", type: "image/png" },
-      { src: "/icon-512", sizes: "512x512", type: "image/png" },
-      { src: "/icon-512-maskable", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

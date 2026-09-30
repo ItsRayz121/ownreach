@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { buildNavItems, isNavItemActive } from "./nav-items";
 import { logout } from "@/lib/actions/auth";
+import { Logo } from "@/components/brand/logo";
 import { NotificationBell } from "./notification-bell";
 import { NavBadge } from "./nav-badge";
 
@@ -40,8 +41,8 @@ export function DesktopSidebar({
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col justify-between border-r px-3 py-6 md:flex">
       <div>
-        <Link href="/home" className="mb-8 block px-3 text-xl font-semibold tracking-tight">
-          OwnReach
+        <Link href="/home" aria-label="OwnReach" className="mb-8 block px-3">
+          <Logo size={36} textClassName="text-xl" />
         </Link>
         <ul className="flex flex-col gap-1">
           {items.map((item) => {
