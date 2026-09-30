@@ -34,6 +34,11 @@ export const metadata: Metadata = {
     description: "Own your reach. Keep your community.",
     type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "OwnReach",
+    description: "Own your reach. Keep your community.",
+  },
 };
 
 export const viewport: Viewport = {

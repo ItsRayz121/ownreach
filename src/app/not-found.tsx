@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Compass } from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 
@@ -7,7 +8,10 @@ export const metadata = { title: "Page not found / OwnReach" };
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-dvh items-center justify-center px-6">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-6">
+      <Link href="/" aria-label="OwnReach home">
+        <Logo size={40} textClassName="text-xl" />
+      </Link>
       <EmptyState
         icon={Compass}
         title="Page not found"

@@ -4,12 +4,14 @@ import { lt } from "drizzle-orm";
 import { db } from "@/db";
 import { emailLoginRequests } from "@/db/schema";
 import { sendEmail } from "@/lib/mail/resend";
+import { emailBrandHeader } from "@/lib/mail/brand";
 
 export const EMAIL_LOGIN_TTL_MS = 15 * 60 * 1000;
 
 function emailHtml(link: string) {
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; color: #111;">
+      ${emailBrandHeader()}
       <p>Click below to sign in to OwnReach. This link expires in 15 minutes and works once.</p>
       <p>
         <a href="${link}" style="display:inline-block;padding:10px 20px;background:#111;color:#fff;text-decoration:none;border-radius:8px;">

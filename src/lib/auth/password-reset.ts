@@ -4,12 +4,14 @@ import { lt } from "drizzle-orm";
 import { db } from "@/db";
 import { passwordResetRequests } from "@/db/schema";
 import { sendEmail } from "@/lib/mail/resend";
+import { emailBrandHeader } from "@/lib/mail/brand";
 
 export const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
 function resetEmailHtml(link: string) {
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; color: #111;">
+      ${emailBrandHeader()}
       <p>We got a request to reset your OwnReach password. This link expires in 30 minutes and works once.</p>
       <p>
         <a href="${link}" style="display:inline-block;padding:10px 20px;background:#111;color:#fff;text-decoration:none;border-radius:8px;">
