@@ -60,7 +60,7 @@ export function MessageBubble({ message, mine, senderLabel, replySenderName, onJ
       ) : (
         <RichText text={message.body} />
       )}
-      <div className={cn("mt-0.5 flex items-center justify-end gap-1.5 text-[10px]", mine ? "text-primary-foreground/70" : "text-muted-foreground")}>
+      <div className={cn("mt-0.5 flex items-center justify-end gap-1.5 text-[11px]", mine ? "text-primary-foreground/70" : "text-muted-foreground")}>
         <span>{formatRelativeTime(message.createdAt)}</span>
         {message.editedAt && <span>· edited</span>}
         {meta}

@@ -86,7 +86,7 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
               ))}
               {suggestions.length > 0 && (
                 <>
-                  <h3 className="text-muted-foreground px-4 pt-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">
+                  <h3 className="text-muted-foreground px-4 pt-2 pb-1 text-xs font-semibold tracking-wide uppercase">
                     Did you mean
                   </h3>
                   {suggestions.map((profile) => (

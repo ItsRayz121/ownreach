@@ -2,7 +2,7 @@
 export function NavBadge({ badge }: { badge: boolean | number | undefined }) {
   if (typeof badge === "number" && badge > 0) {
     return (
-      <span className="bg-primary text-primary-foreground absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[9px] font-semibold">
+      <span className="bg-primary text-primary-foreground absolute -top-1.5 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[10px] font-semibold">
         {badge > 99 ? "99+" : badge}
       </span>
     );
